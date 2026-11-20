@@ -145,15 +145,14 @@ class LinuxPlatform(Platform):
         return p.root_x, p.root_y
 
     def set_pointer_visible(self, visible: bool) -> None:
-        if self._pointer_hidden == visible:
-            import Xlib.ext.xfixes  # noqa: F401
+        import Xlib.ext.xfixes  # noqa: F401
 
-            if visible:
-                self._root.xfixes_show_cursor()
-            else:
-                self._root.xfixes_hide_cursor()
-            self._flush()
-            self._pointer_hidden = not visible
+        if visible:
+            self._root.xfixes_show_cursor()
+        else:
+            self._root.xfixes_hide_cursor()
+        self._flush()
+        self._pointer_hidden = not visible
 
     def set_pointer(self, x: int, y: int) -> None:
         self._warp_targets.append((int(x), int(y), time.monotonic()))

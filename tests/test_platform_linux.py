@@ -9,12 +9,20 @@ class FakeRoot:
     def __init__(self) -> None:
         self.pointer_grabs = []
         self.keyboard_grabs = []
+        self.show_cursor_calls = 0
+        self.hide_cursor_calls = 0
 
     def grab_pointer(self, *args) -> None:
         self.pointer_grabs.append(args)
 
     def grab_keyboard(self, *args) -> None:
         self.keyboard_grabs.append(args)
+
+    def xfixes_show_cursor(self) -> None:
+        self.show_cursor_calls += 1
+
+    def xfixes_hide_cursor(self) -> None:
+        self.hide_cursor_calls += 1
 
 
 class FakeDisplay:
@@ -52,3 +60,17 @@ class LinuxGrabTests(unittest.TestCase):
         platform.ungrab()
 
         fake_display.ungrab_keyboard.assert_called_once()
+
+    def test_show_cursor_is_forced_even_if_state_says_visible(self):
+        from crossmouse.platform_linux import LinuxPlatform
+
+        root = FakeRoot()
+        fake_display = FakeDisplay(root)
+        with mock.patch(
+            "crossmouse.platform_linux.display.Display", return_value=fake_display
+        ):
+            platform = LinuxPlatform()
+
+        platform.set_pointer_visible(True)
+
+        self.assertEqual(root.show_cursor_calls, 1)
