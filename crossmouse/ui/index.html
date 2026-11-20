@@ -271,7 +271,7 @@ const state = {
   local_ip: '',
   local_screen: [],
   peer_screen: [],
-  cfg: { peer_ip: null, port: 52800, edge: 'right', secret: '', clipboard: true, primary: true },
+  cfg: { peer_ip: null, port: 52800, edge: 'right', secret: '', clipboard: true, primary: true, debug: false },
   log: [],
   view: 'status',
   tab: 'config',
@@ -374,6 +374,7 @@ function configHtml() {
       '<button type="button" class="mini-btn" data-act="copy-secret">Copy</button></div></label>' +
     '<label class="check"><input type="checkbox" data-field="clipboard"' + (c.clipboard ? ' checked' : '') + '> Sync clipboard (plain text)</label>' +
     '<label class="check"><input type="checkbox" data-field="primary"' + (c.primary ? ' checked' : '') + '> Physical mouse on this machine</label>' +
+    '<label class="check"><input type="checkbox" data-field="debug"' + (c.debug ? ' checked' : '') + '> Debug logging (writes debug.log)</label>' +
     '<button type="button" class="primary" data-act="save">Save &amp; reconnect</button>' +
     '<div class="saved">' + esc(state.saveMessage) + '</div>' +
     '</div>';
@@ -396,8 +397,8 @@ function signature() {
     local_ip: state.local_ip, local_screen: state.local_screen, peer_screen: state.peer_screen,
     view: state.view, tab: state.tab, secretVisible: state.secretVisible,
     saveMessage: state.saveMessage,
-    cfg: state.role === 'listener' ? [state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary] :
-      [state.cfg.peer_ip, state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary]
+    cfg: state.role === 'listener' ? [state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary, state.cfg.debug] :
+      [state.cfg.peer_ip, state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary, state.cfg.debug]
   });
 }
 
@@ -431,6 +432,7 @@ async function refresh() {
     state.local_ip = s.local_ip || '';
     state.local_screen = s.local_screen || [];
     state.peer_screen = s.peer_screen || [];
+    if (typeof s.debug === 'boolean') state.cfg.debug = s.debug;
     const lines = l.lines || [];
     if (JSON.stringify(lines) !== JSON.stringify(state.log)) {
       state.log = lines;
@@ -451,7 +453,8 @@ async function loadConfig() {
       edge: c.edge || 'right',
       secret: c.secret || '',
       clipboard: c.clipboard !== false,
-      primary: c.primary !== false
+      primary: c.primary !== false,
+      debug: c.debug === true
     };
     state.role = c.peer_ip ? 'controller' : 'listener';
     render();
@@ -494,6 +497,23 @@ async function saveConfig() {
     state.saveMessage = j.ok ? 'Saved. Reconnecting…' : 'Save failed';
   } catch (e) {
     state.saveMessage = 'Save failed';
+  }
+  await refresh();
+  render();
+}
+
+async function setDebug(enabled) {
+  try {
+    const r = await fetch('/api/debug', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled: enabled})
+    });
+    const j = await r.json();
+    state.cfg.debug = !!j.debug;
+    state.saveMessage = j.debug ? 'Debug logging on' : 'Debug logging off';
+  } catch (e) {
+    state.saveMessage = 'Debug toggle failed';
   }
   await refresh();
   render();
@@ -560,10 +580,12 @@ document.addEventListener('input', e => {
   state.saveMessage = '';
 });
 
-document.addEventListener('change', e => {
+document.addEventListener('change', async e => {
   const field = e.target.dataset.field;
   if (!field) return;
-  state.cfg[field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  state.cfg[field] = value;
+  if (field === 'debug') await setDebug(value);
 });
 
 render();

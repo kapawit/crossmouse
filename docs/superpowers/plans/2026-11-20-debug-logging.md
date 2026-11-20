@@ -166,25 +166,25 @@ git commit -m "feat: log pointer snapshots during handoff"
 - Consumes: `POST /api/debug`, `App.status()["debug"]`, `/api/config`.
 - Produces: Settings checkbox with `data-field="debug"`.
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 In `tests/test_webui.py`, add a test that GET `/` contains `data-field="debug"` and the label text `Debug logging`.
 
-- [ ] **Step 2: Run test to verify RED**
+- [x] **Step 2: Run test to verify RED**
 
 Run: `PYTHONPATH=.deps:. python3 -m unittest tests.test_webui.WebUIPageTests -v`
 Expected: FAIL because the checkbox is absent.
 
-- [ ] **Step 3: Add the UI toggle**
+- [x] **Step 3: Add the UI toggle**
 
 Add a checkbox labeled `Debug logging (writes debug.log)` to the Configuration form. Initialize it from `/api/config`. On change, POST `/api/debug` immediately, update local state, and show a short `Debug logging on/off` status message. Ensure `saveConfig()` does not send or clear `debug`.
 
-- [ ] **Step 4: Run test to verify GREEN**
+- [x] **Step 4: Run test to verify GREEN**
 
 Run: `PYTHONPATH=.deps:. python3 -m unittest tests.test_webui.WebUIPageTests -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crossmouse/ui/index.html tests/test_webui.py

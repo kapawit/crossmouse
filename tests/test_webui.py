@@ -55,5 +55,22 @@ class WebUIDebugEndpointTests(unittest.TestCase):
         self.assertEqual(body, {"ok": True, "debug": True})
 
 
+class WebUIPageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.ui = WebUI(FakeApp(), port=_free_port())
+        self.ui.start()
+        self.base = f"http://127.0.0.1:{self.ui._server.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.ui.stop()
+
+    def test_settings_page_exposes_debug_toggle(self):
+        with urlopen(self.base + "/", timeout=5) as response:
+            html = response.read().decode("utf-8")
+
+        self.assertIn('data-field="debug"', html)
+        self.assertIn("Debug logging", html)
+
+
 if __name__ == "__main__":
     unittest.main()
