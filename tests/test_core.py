@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,6 +92,86 @@ class AppStatusTests(unittest.TestCase):
             status = app.status()
 
         self.assertEqual(status["local_ip"], "192.168.1.23")
+
+    def test_status_includes_debug_flag(self):
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.connected = False
+        app._paused = False
+        app.role = "listener"
+        app.config = Config.from_dict({"secret": "s", "debug": True})
+        app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
+        app._ui_port = 7788
+
+        with mock.patch("crossmouse.main.local_ip_address", return_value="127.0.0.1"):
+            status = app.status()
+
+        self.assertTrue(status["debug"])
+
+
+class AppDebugTests(unittest.TestCase):
+    def _app(self, directory: str) -> "App":
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.config_path = Path(directory) / "config.json"
+        app.config = Config.from_dict({"secret": "s"})
+        app.config_path.write_text(json.dumps(app.config.to_dict()))
+        app.engine = SimpleNamespace(config=app.config)
+        app._reconnect = mock.Mock()
+        app._debug_logger = None
+        app._log = mock.Mock()
+        return app
+
+    def test_set_debug_persists_without_reconnect(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            log_path = Path(directory) / "debug.log"
+            with mock.patch("crossmouse.main.debug_log_path", return_value=log_path):
+                app.set_debug(True)
+            try:
+                self.assertTrue(json.loads(app.config_path.read_text())["debug"])
+                self.assertTrue(app.config.debug)
+                self.assertTrue(app.engine.config.debug)
+                self.assertIsNotNone(app._debug_logger)
+                app._reconnect.set.assert_not_called()
+            finally:
+                if app._debug_logger:
+                    app._debug_logger.close()
+
+    def test_set_debug_off_closes_logger(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            logger = mock.Mock()
+            app._debug_logger = logger
+            app.config = Config.from_dict({"secret": "s", "debug": True})
+            app.engine.config = app.config
+            app.config_path.write_text(json.dumps(app.config.to_dict()))
+
+            app.set_debug(False)
+
+            logger.close.assert_called_once_with()
+            self.assertIsNone(app._debug_logger)
+            self.assertFalse(json.loads(app.config_path.read_text())["debug"])
+
+    def test_save_config_preserves_debug(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.config = Config.from_dict({"secret": "s", "debug": True})
+            app.engine.config = app.config
+            app.config_path.write_text(json.dumps(app.config.to_dict()))
+
+            app.save_config({"peer_ip": "1.2.3.4"})
+
+            self.assertTrue(json.loads(app.config_path.read_text())["debug"])
+            self.assertTrue(app.config.debug)
 
 
 class CryptoTests(unittest.TestCase):

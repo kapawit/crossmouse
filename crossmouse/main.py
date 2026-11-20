@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .clipboard import make_clipboard
 from .config import Config
+from .debuglog import DebugLogger, debug_log_path
 from .engine import Engine
 from .link import AuthError, Link, serve_once
 from .platform_base import Platform
@@ -82,6 +83,8 @@ class App:
         self.platform = make_platform()
         self.clipboard = make_clipboard(self.platform)
         self.engine = Engine(self.config, self.platform, self.clipboard)
+        self._debug_logger: DebugLogger | None = None
+        self._last_debug_sample = 0.0
         self._lines: deque[str] = deque(maxlen=200)
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -96,11 +99,57 @@ class App:
         self._open_browser = open_browser
         self.platform.start_capture(self.engine.local_event)
         self._log("CrossMouse started")
+        if self.config.debug:
+            self._open_debug_log()
+            self._debug("Startup with debug logging enabled")
+            self._debug_config_summary()
 
     def _log(self, message: str) -> None:
         with self._lock:
             self._lines.append(time.strftime("%H:%M:%S") + "  " + message)
         log.info(message)
+
+    def _debug(self, message: str) -> None:
+        if self._debug_logger is not None:
+            self._debug_logger.log(message)
+
+    def _open_debug_log(self) -> None:
+        if self._debug_logger is None:
+            path = debug_log_path()
+            self._debug_logger = DebugLogger(path)
+            self._debug(f"Debug log: {path}")
+
+    def _debug_config_summary(self) -> None:
+        config = self.config
+        self._debug(
+            "config "
+            f"peer={config.peer_ip or 'listen'} "
+            f"port={config.port} "
+            f"edge={config.edge} "
+            f"clipboard={config.clipboard} "
+            f"primary={config.primary} "
+            f"debug={config.debug} "
+            "secret=<masked>"
+        )
+
+    def set_debug(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if self.config.debug == enabled:
+            return
+        new = Config.from_dict({**self.config.to_dict(), "debug": enabled})
+        self.config_path.write_text(json.dumps(new.to_dict(), indent=2) + "\n")
+        self.config = new
+        self.engine.config = new
+        if enabled:
+            self._open_debug_log()
+            self._debug_config_summary()
+            self._debug("Debug logging enabled")
+        else:
+            self._debug("Debug logging disabled")
+            if self._debug_logger is not None:
+                self._debug_logger.close()
+            self._debug_logger = None
+        self._log(f"Debug logging {'enabled' if enabled else 'disabled'}")
 
     def log_lines(self) -> list[str]:
         with self._lock:
@@ -118,6 +167,7 @@ class App:
             "edge": self.config.edge,
             "clipboard": self.config.clipboard,
             "primary": self.config.primary,
+            "debug": bool(self.config.debug),
             "local_screen": list(self.engine.local_screen),
             "peer_screen": list(self.engine.peer_screen),
             "ui_port": self._ui_port,
@@ -189,6 +239,10 @@ class App:
         self.platform.set_pointer_visible(True)
         self.platform.release_all_keys()
         self.clipboard.close()
+        self._debug("CrossMouse stopped")
+        if self._debug_logger is not None:
+            self._debug_logger.close()
+            self._debug_logger = None
         self._log("CrossMouse stopped")
 
     def _on_link(self, link: Link) -> None:

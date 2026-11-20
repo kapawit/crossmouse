@@ -85,31 +85,31 @@ git commit -m "feat: add persisted debug config and file logger"
 - Consumes: `DebugLogger`, `debug_log_path()`, `Config.debug`.
 - Produces: `App.set_debug(enabled: bool) -> None`, `App.status()["debug"]`, `POST /api/debug {"enabled": bool}`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 In `tests/test_core.py`, add `AppStatusTests.test_status_includes_debug`, `AppDebugTests.test_set_debug_persists_without_reconnect`, `AppDebugTests.test_set_debug_off_closes_logger`, and `AppDebugTests.test_save_config_preserves_debug`. Use an `App` built via `__new__` with a temp config path and patched `App._log`. Assert saved JSON has `debug: true`, `app.engine.config.debug` is true, `_reconnect.set` was never called, switching off leaves `_debug_logger is None`, and saving an unrelated field keeps `debug` true.
 
 In `tests/test_webui.py`, start `WebUI` with a fake app exposing `status`, `config`, `log_lines`, and `set_debug`; POST `/api/debug` with `{"enabled": true}`; assert the fake recorded `True` and the response is `{"ok": true, "debug": true}`.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run: `PYTHONPATH=.deps:. python3 -m unittest tests.test_core.AppStatusTests tests.test_core.AppDebugTests tests.test_webui -v`
 Expected: FAIL because `set_debug`, status `debug`, and `/api/debug` do not exist.
 
-- [ ] **Step 3: Implement `App.set_debug()` and status field**
+- [x] **Step 3: Implement `App.set_debug()` and status field**
 
 Add `self._debug_logger`, create/close the logger in `set_debug()`, persist config without setting `_reconnect`, update `self.engine.config`, and add `"debug": bool(self.config.debug)` to `status()`. Add `App._debug(message)` that forwards to the logger when present. Ensure `App.stop()` closes the logger.
 
-- [ ] **Step 4: Implement `POST /api/debug`**
+- [x] **Step 4: Implement `POST /api/debug`**
 
 In `webui.py`, route `/api/debug` to `app.app.set_debug(bool(data.get("enabled")))` and return `{"ok": True, "debug": bool(self.config.debug)}` from the app's current config.
 
-- [ ] **Step 5: Run tests to verify GREEN**
+- [x] **Step 5: Run tests to verify GREEN**
 
 Run: `PYTHONPATH=.deps:. python3 -m unittest tests.test_core.AppStatusTests tests.test_core.AppDebugTests tests.test_webui -v`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crossmouse/main.py crossmouse/webui.py tests/test_core.py tests/test_webui.py
