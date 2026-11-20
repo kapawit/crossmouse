@@ -50,6 +50,56 @@ class FakeShowCursor:
         return self.results.pop(0) if self.results else -1
 
 
+def capture_mouse_hook():
+    """Install the real Windows capture hooks with a fake user32 and return
+    the mouse callback plus the events it forwards."""
+    dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
+    procs = {}
+    next_calls = []
+
+    def set_hook(hook_id, proc, module, thread):
+        procs[hook_id] = proc
+        return 1
+
+    def next_hook(*args):
+        next_calls.append(args)
+        return 0
+
+    dlls["user32"]._funcs["SetWindowsHookExW"] = set_hook
+    dlls["user32"]._funcs["CallNextHookEx"] = next_hook
+    dlls["user32"]._funcs["GetMessageW"] = lambda *args: 0
+
+    module = import_platform_win(dlls)
+    platform = module.WindowsPlatform()
+    sink = mock.Mock()
+    platform.start_capture(sink)
+    platform._thread.join(timeout=1)
+    return module, platform, sink, procs[module.WH_MOUSE_LL], next_calls
+
+
+class WindowsMouseHookTests(unittest.TestCase):
+    def test_mouse_move_still_reaches_the_system_while_suppressed(self):
+        module, platform, _, mouse_proc, next_calls = capture_mouse_hook()
+        platform.set_suppress(True)
+        info = module.MSLLHOOKSTRUCT()
+        info.pt.x, info.pt.y = 640, 360
+
+        result = mouse_proc(module.HC_ACTION, module.WM_MOUSEMOVE, ctypes.byref(info))
+
+        self.assertEqual(len(next_calls), 1)
+        self.assertEqual(result, 0)
+
+    def test_own_pointer_warp_is_not_forwarded_as_user_movement(self):
+        module, platform, sink, mouse_proc, _ = capture_mouse_hook()
+        platform.set_pointer(640, 360)
+        info = module.MSLLHOOKSTRUCT()
+        info.pt.x, info.pt.y = 640, 360
+
+        mouse_proc(module.HC_ACTION, module.WM_MOUSEMOVE, ctypes.byref(info))
+
+        sink.assert_not_called()
+
+
 class WindowsPointerVisibilityTests(unittest.TestCase):
     def test_hide_cursor_repeats_until_cursor_counter_is_negative(self):
         dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}

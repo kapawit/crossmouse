@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ctypes
 import threading
+import time
+from collections import deque
 from ctypes import wintypes
 
 from .platform_base import EventSink, InputEvent, Platform
@@ -150,6 +152,7 @@ class WindowsPlatform(Platform):
         self._pressed: set[int] = set()
         self._suppress = False
         self._pointer_hidden = False
+        self._warp_targets: deque[tuple[int, int, float]] = deque()
 
     def set_suppress(self, value: bool) -> None:
         self._suppress = value
@@ -176,7 +179,20 @@ class WindowsPlatform(Platform):
         return p.x, p.y
 
     def set_pointer(self, x: int, y: int) -> None:
-        user32.SetCursorPos(int(x), int(y))
+        x, y = int(x), int(y)
+        self._warp_targets.append((x, y, time.monotonic()))
+        user32.SetCursorPos(x, y)
+
+    def _is_own_warp(self, x: int, y: int) -> bool:
+        now = time.monotonic()
+        targets = self._warp_targets
+        while targets and now - targets[0][2] > 0.5:
+            targets.popleft()
+        for index, (wx, wy, _) in enumerate(targets):
+            if (wx, wy) == (x, y):
+                del targets[index]
+                return True
+        return False
 
     def grab(self) -> None:
         pass
@@ -210,11 +226,20 @@ class WindowsPlatform(Platform):
                 elif wparam == WM_MOUSEWHEEL:
                     delta = ctypes.c_short(info.mouseData >> 16).value
                     out = InputEvent("scroll", 0, 1 if delta > 0 else -1)
+                if (
+                    out is not None
+                    and out.kind == "move"
+                    and self._is_own_warp(info.pt.x, info.pt.y)
+                ):
+                    out = None
                 if out is not None and self.is_own_injection(out):
                     out = None
                 if out is not None:
                     self._sink(out)
-            if self._suppress:
+            # Mouse movement must reach the system while controlling: suppressing
+            # it pins the cursor at the warp target, so the hook keeps reporting
+            # that position and no relative movement can be derived from it.
+            if self._suppress and wparam != WM_MOUSEMOVE:
                 return 1
             return user32.CallNextHookEx(None, code, wparam, lparam)
 
