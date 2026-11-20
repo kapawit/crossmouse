@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from crossmouse import crypto, protocol
 from crossmouse.config import Config
@@ -30,6 +32,20 @@ class ConfigTests(unittest.TestCase):
     def test_rejects_bad_port(self):
         with self.assertRaises(ValueError):
             Config.from_dict({"secret": "s", "port": 99999})
+
+
+class ConfigBootstrapTests(unittest.TestCase):
+    def test_ensure_config_creates_once(self):
+        from crossmouse.main import ensure_config
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "crossmouse" / "config.json"
+            ensure_config(path)
+            self.assertEqual(Config.from_file(path).port, 52800)
+            self.assertTrue(Config.from_file(path).secret)
+            first = path.read_text()
+            ensure_config(path)
+            self.assertEqual(path.read_text(), first)
 
 
 class CryptoTests(unittest.TestCase):

@@ -35,14 +35,14 @@ EOF
 cat > "$PKG/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
-chmod 600 /etc/crossmouse/config.json
+chmod 644 /etc/crossmouse/config.json
 EOF
 chmod 755 "$PKG/DEBIAN/postinst"
 
 cat > "$PKG/usr/bin/crossmouse" <<'EOF'
 #!/bin/sh
 export PYTHONPATH=/usr/lib/crossmouse/.deps:/usr/lib/crossmouse
-exec python3 -m crossmouse.main --config /etc/crossmouse/config.json "$@"
+exec python3 -m crossmouse.main "$@"
 EOF
 chmod 755 "$PKG/usr/bin/crossmouse"
 

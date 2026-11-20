@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import secrets
 import sys
 import threading
 import time
@@ -17,6 +18,20 @@ from .link import AuthError, Link, serve_once
 from .platform_base import Platform
 
 log = logging.getLogger("crossmouse")
+
+
+def default_config_path() -> Path:
+    return Path.home() / ".config" / "crossmouse" / "config.json"
+
+
+def ensure_config(path: Path) -> None:
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    default = Config(secret=secrets.token_hex(16))
+    path.write_text(json.dumps(default.to_dict(), indent=2) + "\n")
+    path.chmod(0o600)
+    log.info("Created default config at %s", path)
 
 
 def make_platform() -> Platform:
@@ -202,7 +217,7 @@ class App:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CrossMouse - share one mouse and keyboard over LAN")
-    parser.add_argument("--config", default="config.json", help="path to config JSON")
+    parser.add_argument("--config", default=None, help="path to config JSON")
     parser.add_argument("--no-ui", action="store_true", help="run headless without the web UI")
     parser.add_argument("--ui-port", type=int, default=7788)
     parser.add_argument("--no-browser", action="store_true")
@@ -214,8 +229,11 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
+    config_path = Path(args.config) if args.config else default_config_path()
+    ensure_config(config_path)
+
     App(
-        config_path=args.config,
+        config_path=config_path,
         enable_ui=not args.no_ui,
         ui_port=args.ui_port,
         open_browser=not args.no_browser,

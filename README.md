@@ -16,7 +16,7 @@ python3 -m pip install --target .deps -r requirements.txt
 
 ## Configure
 
-Copy `config.example.json` to `config.json` on both machines.
+The app creates `~/.config/crossmouse/config.json` on first run with a random secret. Edit that file on both machines (or use the UI's configuration form). For development, copy `config.example.json` to `config.json` and pass `--config config.json`.
 
 - `secret` — must match on both peers.
 - `peer_ip` — the other machine's LAN IP on one machine; omit it on the other to become the listener.
@@ -46,7 +46,7 @@ python3 -m pip install --target .deps -r requirements.txt
 sudo dpkg -i dist/crossmouse_0.1.0_amd64.deb
 ```
 
-The package installs the launcher `/usr/bin/crossmouse`, a desktop entry, and a default config at `/etc/crossmouse/config.json`. Edit that file on each machine before starting.
+The package installs the launcher `/usr/bin/crossmouse` and a desktop entry. On first launch it creates a user-owned config at `~/.config/crossmouse/config.json` and opens the control panel in your browser. `/etc/crossmouse/config.json` is only a system-wide example; pass `--config /etc/crossmouse/config.json` to use it explicitly.
 
 **Windows (.exe)** — PyInstaller cannot cross-compile, so this must be built on Windows (or by the included GitHub Actions workflow):
 
