@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import ctypes
 import threading
-import time
-from collections import deque
 from ctypes import wintypes
 
 from .platform_base import EventSink, InputEvent, Platform
@@ -33,6 +31,15 @@ WM_MBUTTONDOWN, WM_MBUTTONUP = 0x0207, 0x0208
 WM_MOUSEWHEEL = 0x020A
 WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
 WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0104, 0x0105
+WM_INPUT = 0x00FF
+RID_INPUT = 0x10000003
+RIM_TYPEMOUSE = 0
+RIDEV_INPUTSINK = 0x00000100
+HID_USAGE_PAGE_GENERIC = 1
+HID_USAGE_GENERIC_MOUSE = 2
+MOUSE_MOVE_ABSOLUTE = 0x01
+MOUSE_ATTRIBUTES_CHANGED = 0x04
+HWND_MESSAGE = wintypes.HWND(-3)
 
 _VK = {
     "ctrl": 0x11, "shift": 0x10, "alt": 0x12, "super": 0x5B,
@@ -114,6 +121,63 @@ class MSG(ctypes.Structure):
 # LRESULT is LONG_PTR; ctypes.wintypes does not define it.
 LRESULT = ctypes.c_ssize_t
 HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+WNDPROC = ctypes.WINFUNCTYPE(
+    LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+)
+
+
+class RAWINPUTDEVICE(ctypes.Structure):
+    _fields_ = [
+        ("usUsagePage", wintypes.USHORT),
+        ("usUsage", wintypes.USHORT),
+        ("dwFlags", wintypes.DWORD),
+        ("hwndTarget", wintypes.HWND),
+    ]
+
+
+class RAWINPUTHEADER(ctypes.Structure):
+    _fields_ = [
+        ("dwType", wintypes.DWORD),
+        ("dwSize", wintypes.DWORD),
+        ("hDevice", wintypes.HANDLE),
+        ("wParam", wintypes.WPARAM),
+    ]
+
+
+class RAWMOUSE(ctypes.Structure):
+    _fields_ = [
+        ("usFlags", wintypes.USHORT),
+        ("_pad", wintypes.USHORT),
+        ("usButtonFlags", wintypes.USHORT),
+        ("usButtonData", wintypes.USHORT),
+        ("ulRawButtons", ctypes.c_uint32),
+        ("lLastX", ctypes.c_int32),
+        ("lLastY", ctypes.c_int32),
+        ("ulExtraInformation", ctypes.c_uint32),
+    ]
+
+
+class _RAWINPUTDATA(ctypes.Union):
+    _fields_ = [("mouse", RAWMOUSE)]
+
+
+class RAWINPUT(ctypes.Structure):
+    _fields_ = [("header", RAWINPUTHEADER), ("data", _RAWINPUTDATA)]
+
+
+class WNDCLASSW(ctypes.Structure):
+    _fields_ = [
+        ("style", wintypes.UINT),
+        ("lpfnWndProc", WNDPROC),
+        ("cbClsExtra", ctypes.c_int),
+        ("cbWndExtra", ctypes.c_int),
+        ("hInstance", wintypes.HINSTANCE),
+        ("hIcon", wintypes.HICON),
+        ("hCursor", wintypes.HCURSOR),
+        ("hbrBackground", wintypes.HBRUSH),
+        ("lpszMenuName", wintypes.LPCWSTR),
+        ("lpszClassName", wintypes.LPCWSTR),
+    ]
 
 # ctypes defaults to 32-bit int for undeclared arguments and results. On 64-bit
 # Windows that truncates HMODULE/HHOOK handles and LRESULT values.
@@ -142,6 +206,29 @@ user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 user32.SendInput.restype = wintypes.UINT
 user32.ShowCursor.argtypes = [wintypes.BOOL]
 user32.ShowCursor.restype = ctypes.c_int
+user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASSW)]
+user32.RegisterClassW.restype = wintypes.ATOM
+user32.CreateWindowExW.argtypes = [
+    wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID,
+]
+user32.CreateWindowExW.restype = wintypes.HWND
+user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.DefWindowProcW.restype = LRESULT
+user32.DestroyWindow.argtypes = [wintypes.HWND]
+user32.DestroyWindow.restype = wintypes.BOOL
+user32.UnregisterClassW.argtypes = [wintypes.LPCWSTR, wintypes.HINSTANCE]
+user32.UnregisterClassW.restype = wintypes.BOOL
+user32.RegisterRawInputDevices.argtypes = [ctypes.POINTER(RAWINPUTDEVICE), wintypes.UINT, wintypes.UINT]
+user32.RegisterRawInputDevices.restype = wintypes.BOOL
+user32.UnregisterRawInputDevices.argtypes = [ctypes.POINTER(RAWINPUTDEVICE), wintypes.UINT, wintypes.UINT]
+user32.UnregisterRawInputDevices.restype = wintypes.BOOL
+user32.GetRawInputData.argtypes = [
+    wintypes.HANDLE, wintypes.UINT, wintypes.LPVOID,
+    ctypes.POINTER(wintypes.UINT), wintypes.UINT,
+]
+user32.GetRawInputData.restype = wintypes.UINT
 
 
 class WindowsPlatform(Platform):
@@ -152,8 +239,12 @@ class WindowsPlatform(Platform):
         self._pressed: set[int] = set()
         self._suppress = False
         self._pointer_hidden = False
-        self._warp_targets: deque[tuple[int, int, float]] = deque()
-        self._pending_warps: deque[tuple[int, int]] = deque()
+        self._window = None
+        self._class_name = None
+        self._raw_device: RAWINPUTDEVICE | None = None
+        self._mouse_proc = None
+        self._keyboard_proc = None
+        self._window_proc = None
 
     def set_suppress(self, value: bool) -> None:
         self._suppress = value
@@ -180,27 +271,7 @@ class WindowsPlatform(Platform):
         return p.x, p.y
 
     def set_pointer(self, x: int, y: int) -> None:
-        x, y = int(x), int(y)
-        self._warp_targets.append((x, y, time.monotonic()))
-        self._pending_warps.append((x, y))
-        if not self._thread or not self._thread.is_alive():
-            self._apply_pending_warps()
-
-    def _apply_pending_warps(self) -> None:
-        while self._pending_warps:
-            x, y = self._pending_warps.popleft()
-            user32.SetCursorPos(x, y)
-
-    def _is_own_warp(self, x: int, y: int) -> bool:
-        now = time.monotonic()
-        targets = self._warp_targets
-        while targets and now - targets[0][2] > 0.5:
-            targets.popleft()
-        for index, (wx, wy, _) in enumerate(targets):
-            if (wx, wy) == (x, y):
-                del targets[index]
-                return True
-        return False
+        user32.SetCursorPos(int(x), int(y))
 
     def grab(self) -> None:
         pass
@@ -224,7 +295,10 @@ class WindowsPlatform(Platform):
             if code == HC_ACTION and self._sink:
                 info = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
                 if wparam == WM_MOUSEMOVE:
-                    out = InputEvent("move", info.pt.x, info.pt.y)
+                    # While controlling, relative movement comes from Raw Input;
+                    # absolute hook coordinates are only used for edge detection.
+                    if not self._suppress:
+                        out = InputEvent("move", info.pt.x, info.pt.y)
                 elif wparam in (WM_LBUTTONDOWN, WM_LBUTTONUP):
                     out = InputEvent("button", "left", int(wparam == WM_LBUTTONDOWN))
                 elif wparam in (WM_RBUTTONDOWN, WM_RBUTTONUP):
@@ -234,19 +308,10 @@ class WindowsPlatform(Platform):
                 elif wparam == WM_MOUSEWHEEL:
                     delta = ctypes.c_short(info.mouseData >> 16).value
                     out = InputEvent("scroll", 0, 1 if delta > 0 else -1)
-                if (
-                    out is not None
-                    and out.kind == "move"
-                    and self._is_own_warp(info.pt.x, info.pt.y)
-                ):
-                    out = None
                 if out is not None and self.is_own_injection(out):
                     out = None
                 if out is not None:
                     self._sink(out)
-            # Mouse movement must reach the system while controlling: suppressing
-            # it pins the cursor at the warp target, so the hook keeps reporting
-            # that position and no relative movement can be derived from it.
             if self._suppress and wparam != WM_MOUSEMOVE:
                 return 1
             return user32.CallNextHookEx(None, code, wparam, lparam)
@@ -265,6 +330,49 @@ class WindowsPlatform(Platform):
                 return 1
             return user32.CallNextHookEx(None, code, wparam, lparam)
 
+        @WNDPROC
+        def window_proc(hwnd, msg, wparam, lparam):
+            if msg == WM_INPUT and self._sink:
+                self._handle_raw_input(lparam)
+                return 0
+            return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+        # Keep callbacks alive for as long as the hooks and window are installed.
+        self._mouse_proc = mouse_proc
+        self._keyboard_proc = keyboard_proc
+        self._window_proc = window_proc
+
+        wc = WNDCLASSW()
+        wc.lpfnWndProc = window_proc
+        wc.hInstance = module
+        wc.lpszClassName = f"CrossMouseRawInput-{id(self)}"
+        if not user32.RegisterClassW(ctypes.byref(wc)):
+            return
+        self._class_name = wc.lpszClassName
+        self._window = user32.CreateWindowExW(
+            0, self._class_name, "", 0, 0, 0, 0, 0,
+            HWND_MESSAGE, None, module, None,
+        )
+        if not self._window:
+            user32.UnregisterClassW(self._class_name, module)
+            self._class_name = None
+            return
+        device = RAWINPUTDEVICE(
+            HID_USAGE_PAGE_GENERIC,
+            HID_USAGE_GENERIC_MOUSE,
+            RIDEV_INPUTSINK,
+            self._window,
+        )
+        if not user32.RegisterRawInputDevices(
+            ctypes.byref(device), 1, ctypes.sizeof(device)
+        ):
+            user32.DestroyWindow(self._window)
+            self._window = None
+            user32.UnregisterClassW(self._class_name, module)
+            self._class_name = None
+            return
+        self._raw_device = device
+
         self._hooks = [
             user32.SetWindowsHookExW(WH_MOUSE_LL, mouse_proc, module, 0),
             user32.SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_proc, module, 0),
@@ -273,17 +381,55 @@ class WindowsPlatform(Platform):
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
-            # The hook has returned by now, so the original mouse event has
-            # been applied. Warping here sticks; warping inside the hook is
-            # undone when the system processes that event.
-            self._apply_pending_warps()
+
+    def _handle_raw_input(self, handle) -> None:
+        size = wintypes.UINT()
+        header_size = ctypes.sizeof(RAWINPUTHEADER)
+        result = user32.GetRawInputData(
+            handle, RID_INPUT, None, ctypes.byref(size), header_size
+        )
+        if result == 0xFFFFFFFF or size.value == 0:
+            return
+        buffer = ctypes.create_string_buffer(size.value)
+        copied = user32.GetRawInputData(
+            handle, RID_INPUT, buffer, ctypes.byref(size), header_size
+        )
+        if copied in (0, 0xFFFFFFFF):
+            return
+        raw = ctypes.cast(buffer, ctypes.POINTER(RAWINPUT)).contents
+        if raw.header.dwType != RIM_TYPEMOUSE:
+            return
+        mouse = raw.data.mouse
+        if mouse.usFlags & (MOUSE_MOVE_ABSOLUTE | MOUSE_ATTRIBUTES_CHANGED):
+            return
+        dx, dy = mouse.lLastX, mouse.lLastY
+        if dx or dy:
+            self._sink(InputEvent("move_rel", dx, dy))
 
     def stop_capture(self) -> None:
+        if self._raw_device is not None:
+            user32.UnregisterRawInputDevices(
+                ctypes.byref(self._raw_device),
+                1,
+                ctypes.sizeof(self._raw_device),
+            )
+            self._raw_device = None
+        if self._window:
+            user32.DestroyWindow(self._window)
+            self._window = None
+        if self._class_name:
+            user32.UnregisterClassW(
+                self._class_name, kernel32.GetModuleHandleW(None)
+            )
+            self._class_name = None
         for hook in self._hooks:
             if hook:
                 user32.UnhookWindowsHookEx(hook)
         self._hooks = []
         self._sink = None
+        self._mouse_proc = None
+        self._keyboard_proc = None
+        self._window_proc = None
 
     def inject(self, event: InputEvent) -> None:
         if event.kind == "scroll":

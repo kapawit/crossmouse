@@ -3,11 +3,11 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as wintypes
 import importlib
-import queue
 import sys
-import time
 import unittest
 from unittest import mock
+
+from crossmouse.platform_base import InputEvent
 
 
 class FakeFunc:
@@ -17,6 +17,11 @@ class FakeFunc:
 
     def __call__(self, *args):
         return 0
+
+
+def deref(value):
+    value = getattr(value, "_obj", value)
+    return value.contents if hasattr(value, "contents") else value
 
 
 class FakeDLL:
@@ -33,11 +38,68 @@ def import_platform_win(dlls: dict[str, FakeDLL]):
     sys.modules.pop("crossmouse.platform_win", None)
 
     def fake_winfunctype(*args):
-        return lambda func: func
+        return ctypes.CFUNCTYPE(*args)
 
     with mock.patch.object(ctypes, "WinDLL", create=True, side_effect=lambda name, **kw: dlls[name]), \
          mock.patch.object(ctypes, "WINFUNCTYPE", create=True, side_effect=fake_winfunctype):
         return importlib.import_module("crossmouse.platform_win")
+
+
+class RawMouseFixture(ctypes.Structure):
+    _fields_ = [
+        ("usFlags", wintypes.USHORT),
+        ("_pad", wintypes.USHORT),
+        ("usButtonFlags", wintypes.USHORT),
+        ("usButtonData", wintypes.USHORT),
+        ("ulRawButtons", ctypes.c_uint32),
+        ("lLastX", ctypes.c_int32),
+        ("lLastY", ctypes.c_int32),
+        ("ulExtraInformation", ctypes.c_uint32),
+    ]
+
+
+class RawInputHeaderFixture(ctypes.Structure):
+    _fields_ = [
+        ("dwType", wintypes.DWORD),
+        ("dwSize", wintypes.DWORD),
+        ("hDevice", wintypes.HANDLE),
+        ("wParam", wintypes.WPARAM),
+    ]
+
+
+class RawInputDataFixture(ctypes.Union):
+    _fields_ = [("mouse", RawMouseFixture)]
+
+
+class RawInputFixture(ctypes.Structure):
+    _fields_ = [
+        ("header", RawInputHeaderFixture),
+        ("data", RawInputDataFixture),
+    ]
+
+
+def raw_mouse_bytes(dx: int, dy: int, flags: int = 0) -> bytes:
+    raw = RawInputFixture(
+        header=RawInputHeaderFixture(
+            dwType=0,
+            dwSize=ctypes.sizeof(RawInputFixture),
+            hDevice=None,
+            wParam=0,
+        ),
+        data=RawInputDataFixture(
+            mouse=RawMouseFixture(
+                usFlags=flags,
+                _pad=0,
+                usButtonFlags=0,
+                usButtonData=0,
+                ulRawButtons=0,
+                lLastX=dx,
+                lLastY=dy,
+                ulExtraInformation=0,
+            )
+        ),
+    )
+    return bytes(raw)
 
 
 class FakeShowCursor:
@@ -69,6 +131,9 @@ def capture_mouse_hook():
 
     dlls["user32"]._funcs["SetWindowsHookExW"] = set_hook
     dlls["user32"]._funcs["CallNextHookEx"] = next_hook
+    dlls["user32"]._funcs["RegisterClassW"] = lambda *args: 1
+    dlls["user32"]._funcs["CreateWindowExW"] = lambda *args: 1
+    dlls["user32"]._funcs["RegisterRawInputDevices"] = lambda *args: 1
     dlls["user32"]._funcs["GetMessageW"] = lambda *args: 0
 
     module = import_platform_win(dlls)
@@ -79,77 +144,127 @@ def capture_mouse_hook():
     return module, platform, sink, procs[module.WH_MOUSE_LL], next_calls
 
 
-def capture_mouse_hook_with_loop():
-    """Capture the hook with a message loop that can be stepped from the test."""
+def capture_raw_input(payload):
+    """Start capture with fake Win32 calls and expose the raw-input window proc."""
     dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
-    procs = {}
-    set_cursor_calls = []
-    messages = queue.Queue()
+    events = []
+    state = {"wndproc": None}
 
-    def set_hook(hook_id, proc, module, thread):
-        procs[hook_id] = proc
+    def register_class(class_ptr):
+        wc = deref(class_ptr)
+        state["wndproc"] = wc.lpfnWndProc
+        state["class_name"] = wc.lpszClassName
         return 1
 
-    def set_cursor(x, y):
-        set_cursor_calls.append((x, y))
+    def create_window(*args):
+        state["create_args"] = args
         return 1
 
-    def get_message(msg, hwnd, min_msg, max_msg):
-        return messages.get(timeout=2)
+    def register_raw_devices(devices, count, size):
+        device = deref(devices)
+        state["registration"] = (
+            device.usUsagePage,
+            device.usUsage,
+            device.dwFlags,
+            count,
+            size,
+        )
+        return 1
 
-    dlls["user32"]._funcs["SetWindowsHookExW"] = set_hook
-    dlls["user32"]._funcs["CallNextHookEx"] = lambda *args: 0
-    dlls["user32"]._funcs["SetCursorPos"] = set_cursor
-    dlls["user32"]._funcs["GetMessageW"] = get_message
+    def unregister_raw_devices(devices, count, size):
+        device = deref(devices)
+        state["unregistered"] = (device.usUsagePage, device.usUsage, count, size)
+        return 1
+
+    def get_raw_input_data(handle, command, buffer, size_ptr, header_size):
+        data = payload["data"]
+        size_ptr = deref(size_ptr)
+        if buffer is None:
+            size_ptr.value = len(data)
+            return 0
+        ctypes.memmove(deref(buffer), data, len(data))
+        return len(data)
+
+    def destroy_window(hwnd):
+        state["destroyed"] = hwnd
+        return 1
+
+    def unregister_class(name, module):
+        state["class_unregistered"] = name
+        return 1
+
+    dlls["user32"]._funcs["RegisterClassW"] = register_class
+    dlls["user32"]._funcs["CreateWindowExW"] = create_window
+    dlls["user32"]._funcs["RegisterRawInputDevices"] = register_raw_devices
+    dlls["user32"]._funcs["UnregisterRawInputDevices"] = unregister_raw_devices
+    dlls["user32"]._funcs["GetRawInputData"] = get_raw_input_data
+    dlls["user32"]._funcs["DestroyWindow"] = destroy_window
+    dlls["user32"]._funcs["UnregisterClassW"] = unregister_class
+    dlls["user32"]._funcs["GetMessageW"] = lambda *args: 0
 
     module = import_platform_win(dlls)
     platform = module.WindowsPlatform()
-    platform.start_capture(lambda event: platform.set_pointer(640, 360))
-    deadline = time.monotonic() + 2
-    while module.WH_MOUSE_LL not in procs and time.monotonic() < deadline:
-        time.sleep(0.01)
-    return module, platform, procs[module.WH_MOUSE_LL], set_cursor_calls, messages
+    platform.start_capture(events.append)
+    platform._thread.join(timeout=1)
+    return module, platform, events, state
 
 
 class WindowsMouseHookTests(unittest.TestCase):
-    def test_mouse_move_still_reaches_the_system_while_suppressed(self):
-        module, platform, _, mouse_proc, next_calls = capture_mouse_hook()
+    def test_mouse_move_reaches_system_without_forwarding_while_suppressed(self):
+        module, platform, sink, mouse_proc, next_calls = capture_mouse_hook()
         platform.set_suppress(True)
         info = module.MSLLHOOKSTRUCT()
         info.pt.x, info.pt.y = 640, 360
 
-        result = mouse_proc(module.HC_ACTION, module.WM_MOUSEMOVE, ctypes.byref(info))
+        result = mouse_proc(module.HC_ACTION, module.WM_MOUSEMOVE, ctypes.addressof(info))
 
+        sink.assert_not_called()
         self.assertEqual(len(next_calls), 1)
         self.assertEqual(result, 0)
 
-    def test_pointer_warp_waits_until_after_hook_processing(self):
-        module, platform, mouse_proc, set_cursor_calls, messages = capture_mouse_hook_with_loop()
-        info = module.MSLLHOOKSTRUCT()
-        info.pt.x, info.pt.y = 100, 200
-        try:
-            mouse_proc(module.HC_ACTION, module.WM_MOUSEMOVE, ctypes.byref(info))
 
-            self.assertEqual(set_cursor_calls, [])
+class WindowsRawInputTests(unittest.TestCase):
+    def test_relative_mouse_delta_is_forwarded(self):
+        payload = {"data": raw_mouse_bytes(37, -12)}
+        module, platform, events, state = capture_raw_input(payload)
+        self.assertIsNotNone(state["wndproc"], "raw input window was not registered")
 
-            messages.put(1)
-            deadline = time.monotonic() + 2
-            while not set_cursor_calls and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertEqual(set_cursor_calls, [(640, 360)])
-        finally:
-            messages.put(0)
-            platform._thread.join(timeout=2)
+        state["wndproc"](1, 0x00FF, 0, 1)
 
-    def test_own_pointer_warp_is_not_forwarded_as_user_movement(self):
-        module, platform, sink, mouse_proc, _ = capture_mouse_hook()
-        platform.set_pointer(640, 360)
-        info = module.MSLLHOOKSTRUCT()
-        info.pt.x, info.pt.y = 640, 360
+        self.assertEqual(events, [InputEvent("move_rel", 37, -12)])
 
-        mouse_proc(module.HC_ACTION, module.WM_MOUSEMOVE, ctypes.byref(info))
+    def test_absolute_mouse_delta_is_ignored(self):
+        payload = {"data": raw_mouse_bytes(100, 200, flags=0x01)}
+        module, platform, events, state = capture_raw_input(payload)
+        self.assertIsNotNone(state["wndproc"], "raw input window was not registered")
 
-        sink.assert_not_called()
+        state["wndproc"](1, 0x00FF, 0, 1)
+
+        self.assertEqual(events, [])
+
+    def test_raw_mouse_layout_matches_win32_abi(self):
+        payload = {"data": raw_mouse_bytes(0, 0)}
+        module, platform, events, state = capture_raw_input(payload)
+
+        self.assertEqual(module.RAWMOUSE.usFlags.offset, 0)
+        self.assertEqual(module.RAWMOUSE.usButtonFlags.offset, 4)
+        self.assertEqual(module.RAWMOUSE.lLastX.offset, 12)
+        self.assertEqual(ctypes.sizeof(module.RAWMOUSE), 24)
+
+    def test_mouse_raw_input_device_is_registered_with_input_sink(self):
+        payload = {"data": raw_mouse_bytes(0, 0)}
+        module, platform, events, state = capture_raw_input(payload)
+
+        self.assertEqual(state["registration"][:3], (1, 2, 0x100))
+        self.assertEqual(state["registration"][3], 1)
+
+    def test_stop_capture_unregisters_raw_input_device(self):
+        payload = {"data": raw_mouse_bytes(0, 0)}
+        module, platform, events, state = capture_raw_input(payload)
+
+        platform.stop_capture()
+
+        self.assertEqual(state["unregistered"][0], 1)
 
 
 class WindowsPointerVisibilityTests(unittest.TestCase):

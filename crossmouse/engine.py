@@ -196,14 +196,17 @@ class Engine:
         log.info("controlling peer")
 
     def _forward(self, event: InputEvent) -> None:
-        if event.kind == "move":
-            x, y = int(event.a), int(event.b)
-            last = self._last_pointer or (x, y)
-            dx, dy = x - last[0], y - last[1]
-            w, h = self.local_screen
-            center = (w // 2, h // 2)
-            self.platform.set_pointer(*center)
-            self._last_pointer = center
+        if event.kind in ("move", "move_rel"):
+            if event.kind == "move_rel":
+                dx, dy = int(event.a), int(event.b)
+            else:
+                x, y = int(event.a), int(event.b)
+                last = self._last_pointer or (x, y)
+                dx, dy = x - last[0], y - last[1]
+                w, h = self.local_screen
+                center = (w // 2, h // 2)
+                self.platform.set_pointer(*center)
+                self._last_pointer = center
             pw, ph = self.peer_screen
             prev_x, prev_y = self._vx, self._vy
             self._vx = max(0, min(pw - 1, self._vx + dx))

@@ -138,6 +138,19 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(moves[-1]["x"], 10)
         self.assertEqual(moves[-1]["y"], 410)
 
+    def test_controlling_forwards_relative_delta_without_pointer_warp(self):
+        engine, platform, _, link = make_engine(edge="left", peer=(1920, 1080))
+        engine.local_event(InputEvent("move", 10, 400))
+        engine.local_event(InputEvent("move", 0, 400))
+        link.sent.clear()
+        platform.set_points.clear()
+
+        engine.local_event(InputEvent("move_rel", -30, 15))
+
+        moves = [d for k, d in link.sent if k == protocol.MOVE]
+        self.assertEqual(moves[-1], {"x": 1889, "y": 555})
+        self.assertEqual(platform.set_points, [])
+
     def test_non_owner_never_initiates_handoff(self):
         engine, platform, _, link = make_engine(primary=False)
         engine.local_event(InputEvent("move", 999, 400))
