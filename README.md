@@ -59,7 +59,7 @@ The workflow at `.github/workflows/build.yml` builds both packages on `workflow_
 
 ## How handoff works
 
-Each peer captures local input. When the cursor reaches the configured edge, that peer sends a handoff, grabs the pointer, and forwards input to the other machine, which injects it. Moving the injected cursor back to the shared edge returns control locally. Held keys are released on every handoff.
+Each peer captures local input. When the cursor reaches the configured edge, that peer sends a handoff, grabs the pointer, hides the local cursor, and forwards input to the other machine, which injects it. Moving the injected cursor back to the shared edge returns control locally and shows the cursor again. Held keys are released on every handoff.
 
 The link is TCP with AES-GCM. The session key comes from PBKDF2-HMAC-SHA256 over the shared secret with a salt sent by the listener; a handshake probe rejects a wrong secret before any input is exchanged.
 

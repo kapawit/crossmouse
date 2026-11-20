@@ -147,9 +147,15 @@ class WindowsPlatform(Platform):
         self._hooks: list = []
         self._pressed: set[int] = set()
         self._suppress = False
+        self._pointer_hidden = False
 
     def set_suppress(self, value: bool) -> None:
         self._suppress = value
+
+    def set_pointer_visible(self, visible: bool) -> None:
+        if self._pointer_hidden == visible:
+            self._u.ShowCursor(bool(visible))
+            self._pointer_hidden = not visible
 
     def screen_size(self) -> tuple[int, int]:
         return (

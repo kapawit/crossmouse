@@ -103,6 +103,7 @@ class LinuxPlatform(Platform):
         self._grabbed = False
         self._pressed_keys: set[int] = set()
         self._warp_targets: deque[tuple[int, int, float]] = deque()
+        self._pointer_hidden = False
 
     def screen_size(self) -> tuple[int, int]:
         screen = self._display.screen()
@@ -111,6 +112,20 @@ class LinuxPlatform(Platform):
     def pointer_position(self) -> tuple[int, int]:
         p = self._root.query_pointer()
         return p.root_x, p.root_y
+
+    def set_pointer_visible(self, visible: bool) -> None:
+        if self._pointer_hidden == visible:
+            import Xlib.ext.xfixes  # noqa: F401
+
+            if visible:
+                self._root.xfixes_show_cursor()
+            else:
+                self._root.xfixes_hide_cursor()
+            try:
+                self._display.flush()
+            except Exception:
+                pass
+            self._pointer_hidden = not visible
 
     def set_pointer(self, x: int, y: int) -> None:
         self._warp_targets.append((int(x), int(y), time.monotonic()))

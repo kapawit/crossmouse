@@ -18,6 +18,7 @@ class FakePlatform(Platform):
         self.set_points: list[tuple[int, int]] = []
         self.released = 0
         self.suppressed = False
+        self.pointer_visible = True
 
     def screen_size(self):
         return self.size
@@ -50,6 +51,9 @@ class FakePlatform(Platform):
 
     def set_suppress(self, value):
         self.suppressed = value
+
+    def set_pointer_visible(self, visible):
+        self.pointer_visible = visible
 
 
 class FakeClipboard(Clipboard):
@@ -197,6 +201,14 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(platform.suppressed)
         engine.detach()
         self.assertFalse(platform.suppressed)
+
+    def test_pointer_hidden_while_controlling(self):
+        engine, platform, _, _ = make_engine()
+        engine.local_event(InputEvent("move", 900, 400))
+        engine.local_event(InputEvent("move", 999, 400))
+        self.assertFalse(platform.pointer_visible)
+        engine.detach()
+        self.assertTrue(platform.pointer_visible)
 
     def test_detach_releases(self):
         engine, platform, _, _ = make_engine()

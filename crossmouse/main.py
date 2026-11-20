@@ -164,6 +164,7 @@ class App:
             self.ui.stop()
         self.platform.stop_capture()
         self.platform.ungrab()
+        self.platform.set_pointer_visible(True)
         self.platform.release_all_keys()
         self.clipboard.close()
         self._log("CrossMouse stopped")

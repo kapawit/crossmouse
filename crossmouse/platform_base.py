@@ -53,6 +53,9 @@ class Platform:
     def set_suppress(self, value: bool) -> None:
         pass
 
+    def set_pointer_visible(self, visible: bool) -> None:
+        pass
+
     def remember_injection(self, event: InputEvent) -> None:
         injected = getattr(self, "_injected", None)
         if injected is None:

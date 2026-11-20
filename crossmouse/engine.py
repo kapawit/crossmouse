@@ -92,6 +92,7 @@ class Engine:
             self._begin_controlling(*self.platform.pointer_position())
         elif self.mode == "controlled":
             self.platform.release_all_keys()
+            self.platform.set_pointer_visible(True)
             self._idle_last = None
             self.mode = "idle"
             self._send(protocol.HANDOFF, {"from": "controlled"})
@@ -99,6 +100,7 @@ class Engine:
     def detach(self) -> None:
         self.platform.ungrab()
         self.platform.set_suppress(False)
+        self.platform.set_pointer_visible(True)
         self.platform.release_all_keys()
         self._idle_last = None
         self.mode = "idle"
@@ -130,6 +132,7 @@ class Engine:
             if event.kind == "key" and event.b:
                 self.platform.release_all_keys()
                 self.platform.set_suppress(False)
+                self.platform.set_pointer_visible(True)
                 self._idle_last = None
                 self._send(protocol.HANDOFF, {"from": "controlled"})
                 self.mode = "idle"
@@ -141,6 +144,7 @@ class Engine:
         center = (w // 2, h // 2)
         self.platform.grab()
         self.platform.set_suppress(True)
+        self.platform.set_pointer_visible(False)
         self.platform.set_pointer(*center)
         self._last_pointer = center
         self._idle_last = None
@@ -180,6 +184,7 @@ class Engine:
     def _end_controlling(self) -> None:
         self.platform.ungrab()
         self.platform.set_suppress(False)
+        self.platform.set_pointer_visible(True)
         self.platform.release_all_keys()
         self._idle_last = None
         self.mode = "idle"
@@ -192,10 +197,12 @@ class Engine:
                 self.mode = "controlled"
                 self._remote_first = True
                 self.platform.release_all_keys()
+                self.platform.set_pointer_visible(True)
                 log.info("peer is controlling us")
             else:
                 self.mode = "idle"
                 self.platform.set_suppress(False)
+                self.platform.set_pointer_visible(True)
                 self.platform.release_all_keys()
                 self._idle_last = None
                 log.info("peer resumed local control")
@@ -211,6 +218,7 @@ class Engine:
                 ):
                     self.mode = "idle"
                     self.platform.set_suppress(False)
+                    self.platform.set_pointer_visible(True)
                     self.platform.release_all_keys()
                     self._idle_last = None
                     self._send(protocol.HANDOFF, {"from": "controlled"})
