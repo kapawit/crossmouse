@@ -65,11 +65,33 @@ class LinuxButtonTests(unittest.TestCase):
         self.assertEqual(button_event(5, 1).b, -1)
         self.assertIsNone(button_event(4, 0))
 
+    def test_own_warp_is_filtered_once(self):
+        import time
+        from collections import deque
+
+        from crossmouse.platform_linux import LinuxPlatform
+
+        platform = LinuxPlatform.__new__(LinuxPlatform)
+        platform._warp_targets = deque([(960, 540, time.monotonic())])
+        self.assertTrue(platform._is_own_warp(960, 540))
+        self.assertFalse(platform._is_own_warp(960, 540))
+
     def test_normal_buttons_unchanged(self):
         from crossmouse.platform_linux import button_event
 
         self.assertEqual(button_event(1, 1).kind, "button")
         self.assertEqual(button_event(3, 1).a, "right")
+
+
+class InjectionFilterTests(unittest.TestCase):
+    def test_injected_event_consumed_once(self):
+        from crossmouse.platform_base import InputEvent, Platform
+
+        platform = Platform()
+        platform.remember_injection(InputEvent("key", "a", 1))
+        self.assertTrue(platform.is_own_injection(InputEvent("key", "a", 1)))
+        self.assertFalse(platform.is_own_injection(InputEvent("key", "a", 1)))
+        self.assertFalse(platform.is_own_injection(InputEvent("key", "b", 1)))
 
 
 class ProtocolTests(unittest.TestCase):

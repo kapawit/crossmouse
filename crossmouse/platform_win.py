@@ -118,6 +118,10 @@ class WindowsPlatform(Platform):
         self._thread: threading.Thread | None = None
         self._hooks: list = []
         self._pressed: set[int] = set()
+        self._suppress = False
+
+    def set_suppress(self, value: bool) -> None:
+        self._suppress = value
 
     def screen_size(self) -> tuple[int, int]:
         return (
@@ -151,19 +155,26 @@ class WindowsPlatform(Platform):
 
         @HOOKPROC
         def mouse_proc(code, wparam, lparam):
+            out = None
             if code == HC_ACTION and self._sink:
                 info = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
                 if wparam == WM_MOUSEMOVE:
-                    self._sink(InputEvent("move", info.pt.x, info.pt.y))
+                    out = InputEvent("move", info.pt.x, info.pt.y)
                 elif wparam in (WM_LBUTTONDOWN, WM_LBUTTONUP):
-                    self._sink(InputEvent("button", "left", int(wparam == WM_LBUTTONDOWN)))
+                    out = InputEvent("button", "left", int(wparam == WM_LBUTTONDOWN))
                 elif wparam in (WM_RBUTTONDOWN, WM_RBUTTONUP):
-                    self._sink(InputEvent("button", "right", int(wparam == WM_RBUTTONDOWN)))
+                    out = InputEvent("button", "right", int(wparam == WM_RBUTTONDOWN))
                 elif wparam in (WM_MBUTTONDOWN, WM_MBUTTONUP):
-                    self._sink(InputEvent("button", "middle", int(wparam == WM_MBUTTONDOWN)))
+                    out = InputEvent("button", "middle", int(wparam == WM_MBUTTONDOWN))
                 elif wparam == WM_MOUSEWHEEL:
                     delta = ctypes.c_short(info.mouseData >> 16).value
-                    self._sink(InputEvent("scroll", 0, 1 if delta > 0 else -1))
+                    out = InputEvent("scroll", 0, 1 if delta > 0 else -1)
+                if out is not None and self.is_own_injection(out):
+                    out = None
+                if out is not None:
+                    self._sink(out)
+            if self._suppress:
+                return 1
             return user32.CallNextHookEx(None, code, wparam, lparam)
 
         @HOOKPROC
@@ -173,7 +184,11 @@ class WindowsPlatform(Platform):
                 key = _vk_name(info.vkCode)
                 if key:
                     down = wparam in (WM_KEYDOWN, WM_SYSKEYDOWN)
-                    self._sink(InputEvent("key", key, int(down)))
+                    out = InputEvent("key", key, int(down))
+                    if not self.is_own_injection(out):
+                        self._sink(out)
+            if self._suppress:
+                return 1
             return user32.CallNextHookEx(None, code, wparam, lparam)
 
         self._hooks = [
@@ -193,6 +208,12 @@ class WindowsPlatform(Platform):
         self._sink = None
 
     def inject(self, event: InputEvent) -> None:
+        if event.kind == "scroll":
+            self.remember_injection(
+                InputEvent("scroll", 0, 1 if int(event.b) > 0 else -1)
+            )
+        else:
+            self.remember_injection(event)
         items = []
         if event.kind == "move":
             w, h = self.screen_size()

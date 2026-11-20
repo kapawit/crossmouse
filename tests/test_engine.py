@@ -17,6 +17,7 @@ class FakePlatform(Platform):
         self.moves: list[tuple[int, int]] = []
         self.set_points: list[tuple[int, int]] = []
         self.released = 0
+        self.suppressed = False
 
     def screen_size(self):
         return self.size
@@ -46,6 +47,9 @@ class FakePlatform(Platform):
 
     def release_all_keys(self):
         self.released += 1
+
+    def set_suppress(self, value):
+        self.suppressed = value
 
 
 class FakeClipboard(Clipboard):
@@ -99,6 +103,7 @@ class EdgeHelperTests(unittest.TestCase):
 class EngineTests(unittest.TestCase):
     def test_crossing_edge_begins_controlling(self):
         engine, platform, _, link = make_engine()
+        engine.local_event(InputEvent("move", 900, 400))
         engine.local_event(InputEvent("move", 999, 400))
         self.assertEqual(engine.mode, "controlling")
         self.assertTrue(platform.grabbed)
@@ -106,6 +111,7 @@ class EngineTests(unittest.TestCase):
 
     def test_handoff_sends_initial_position_to_peer_not_locally(self):
         engine, platform, _, link = make_engine()
+        engine.local_event(InputEvent("move", 900, 400))
         engine.local_event(InputEvent("move", 999, 400))
         self.assertEqual(platform.moves, [])
         moves = [d for k, d in link.sent if k == protocol.MOVE]
@@ -113,6 +119,7 @@ class EngineTests(unittest.TestCase):
 
     def test_controlling_forwards_move_mapped_to_peer(self):
         engine, platform, _, link = make_engine()
+        engine.local_event(InputEvent("move", 900, 400))
         engine.local_event(InputEvent("move", 999, 400))
         link.sent.clear()
         engine.local_event(InputEvent("move", 510, 410))
@@ -121,8 +128,18 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(moves[-1]["x"], 10)
         self.assertEqual(moves[-1]["y"], 410)
 
+    def test_inward_motion_at_edge_does_not_handoff(self):
+        engine, _, _, link = make_engine()
+        engine.local_event(InputEvent("move", 999, 400))
+        engine.local_event(InputEvent("move", 990, 400))
+        self.assertEqual(engine.mode, "idle")
+        engine.local_event(InputEvent("move", 995, 400))
+        engine.local_event(InputEvent("move", 999, 400))
+        self.assertEqual(engine.mode, "controlling")
+
     def test_first_leftward_delta_does_not_hand_back(self):
         engine, _, _, link = make_engine()
+        engine.local_event(InputEvent("move", 900, 400))
         engine.local_event(InputEvent("move", 999, 400))
         link.sent.clear()
         engine.local_event(InputEvent("move", 490, 400))
@@ -158,8 +175,17 @@ class EngineTests(unittest.TestCase):
         engine.poll_clipboard()
         self.assertIn((protocol.CLIPBOARD, {"text": "hello"}), link.sent)
 
+    def test_suppression_tracks_controlling_mode(self):
+        engine, platform, _, _ = make_engine()
+        engine.local_event(InputEvent("move", 900, 400))
+        engine.local_event(InputEvent("move", 999, 400))
+        self.assertTrue(platform.suppressed)
+        engine.detach()
+        self.assertFalse(platform.suppressed)
+
     def test_detach_releases(self):
         engine, platform, _, _ = make_engine()
+        engine.local_event(InputEvent("move", 900, 400))
         engine.local_event(InputEvent("move", 999, 400))
         engine.detach()
         self.assertFalse(platform.grabbed)
@@ -171,6 +197,8 @@ class PumpLinkTests(unittest.TestCase):
         from crossmouse.main import pump_link
 
         class Link:
+            alive = True
+
             def recv(self, timeout=None):
                 return None
 
@@ -179,12 +207,17 @@ class PumpLinkTests(unittest.TestCase):
 
             def __init__(self):
                 self.polls = 0
+                self.detached = 0
 
             def remote_message(self, *args):
                 pass
 
             def poll_clipboard(self):
                 self.polls += 1
+
+            def detach(self):
+                self.detached += 1
+                self.link = None
 
         engine = Engine()
         calls = []
@@ -195,6 +228,31 @@ class PumpLinkTests(unittest.TestCase):
 
         pump_link(engine, Link(), should_stop)
         self.assertEqual(engine.polls, 3)
+
+    def test_dead_link_detaches_for_reconnect(self):
+        from crossmouse.main import pump_link
+
+        class Link:
+            alive = False
+
+            def recv(self, timeout=None):
+                return None
+
+        class Engine:
+            link = object()
+
+            def __init__(self):
+                self.detached = 0
+
+            def poll_clipboard(self):
+                pass
+
+            def detach(self):
+                self.detached += 1
+
+        engine = Engine()
+        pump_link(engine, Link(), lambda: False)
+        self.assertEqual(engine.detached, 1)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,16 @@ def at_edge(edge: str, x: int, y: int, width: int, height: int) -> bool:
     return y >= height - 1
 
 
+def moving_outward(edge: str, x: int, y: int, px: int, py: int) -> bool:
+    if edge == "left":
+        return x < px
+    if edge == "right":
+        return x > px
+    if edge == "top":
+        return y < py
+    return y > py
+
+
 def beyond_edge(edge: str, x: int, y: int, width: int, height: int, px: int, py: int) -> bool:
     if edge == "left":
         return x <= 0 and px > 0
@@ -63,6 +73,7 @@ class Engine:
         self._vx = 0
         self._vy = 0
         self._last_pointer: tuple[int, int] | None = None
+        self._idle_last: tuple[int, int] | None = None
         self._last_remote_x = 0
         self._last_remote_y = 0
         self._remote_first = True
@@ -81,12 +92,15 @@ class Engine:
             self._begin_controlling(*self.platform.pointer_position())
         elif self.mode == "controlled":
             self.platform.release_all_keys()
+            self._idle_last = None
             self.mode = "idle"
             self._send(protocol.HANDOFF, {"from": "controlled"})
 
     def detach(self) -> None:
         self.platform.ungrab()
+        self.platform.set_suppress(False)
         self.platform.release_all_keys()
+        self._idle_last = None
         self.mode = "idle"
         self.link = None
 
@@ -98,13 +112,25 @@ class Engine:
             if event.kind == "move":
                 w, h = self.local_screen
                 x, y = int(event.a), int(event.b)
-                if at_edge(self.config.edge, x, y, w, h):
+                previous = self._idle_last
+                self._idle_last = (x, y)
+                if previous is None:
+                    return
+                dx, dy = x - previous[0], y - previous[1]
+                if dx == 0 and dy == 0:
+                    return
+                if at_edge(self.config.edge, x, y, w, h) and (
+                    not at_edge(self.config.edge, previous[0], previous[1], w, h)
+                    or moving_outward(self.config.edge, x, y, *previous)
+                ):
                     self._begin_controlling(x, y)
         elif self.mode == "controlling":
             self._forward(event)
         elif self.mode == "controlled" and event.kind in ("key", "button"):
             if event.kind == "key" and event.b:
                 self.platform.release_all_keys()
+                self.platform.set_suppress(False)
+                self._idle_last = None
                 self._send(protocol.HANDOFF, {"from": "controlled"})
                 self.mode = "idle"
 
@@ -114,8 +140,10 @@ class Engine:
         self._vx, self._vy = entry_point(OPPOSITE[self.config.edge], pw, ph)
         center = (w // 2, h // 2)
         self.platform.grab()
+        self.platform.set_suppress(True)
         self.platform.set_pointer(*center)
         self._last_pointer = center
+        self._idle_last = None
         self.mode = "controlling"
         self._send(protocol.HANDOFF, {"from": "controlling"})
         self._send(protocol.MOVE, {"x": self._vx, "y": self._vy})
@@ -151,7 +179,9 @@ class Engine:
 
     def _end_controlling(self) -> None:
         self.platform.ungrab()
+        self.platform.set_suppress(False)
         self.platform.release_all_keys()
+        self._idle_last = None
         self.mode = "idle"
         self._send(protocol.HANDOFF, {"from": "controlled"})
         log.info("control returned locally")
@@ -165,7 +195,9 @@ class Engine:
                 log.info("peer is controlling us")
             else:
                 self.mode = "idle"
+                self.platform.set_suppress(False)
                 self.platform.release_all_keys()
+                self._idle_last = None
                 log.info("peer resumed local control")
         elif self.mode == "controlled":
             if kind == protocol.MOVE:
@@ -178,7 +210,9 @@ class Engine:
                     edge, x, y, pw, ph, self._last_remote_x, self._last_remote_y
                 ):
                     self.mode = "idle"
+                    self.platform.set_suppress(False)
                     self.platform.release_all_keys()
+                    self._idle_last = None
                     self._send(protocol.HANDOFF, {"from": "controlled"})
                     self._last_remote_x, self._last_remote_y = x, y
                     return

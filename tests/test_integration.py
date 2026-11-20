@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import socket
 import threading
+import time
 import unittest
 
 from crossmouse.link import AuthError, Link
@@ -38,6 +39,35 @@ class LinkIntegrationTests(unittest.TestCase):
         self.assertEqual(link.recv(timeout=2), ("ping", {"n": 1}))
         link.close()
 
+    def test_malformed_handshake_does_not_crash_listener(self):
+        from crossmouse.link import serve_once
+
+        errors = []
+        stop = threading.Event()
+
+        def run():
+            try:
+                serve_once(
+                    45303,
+                    "secret",
+                    (800, 600),
+                    lambda link: None,
+                    should_stop=stop.is_set,
+                )
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        time.sleep(0.3)
+        conn = socket.create_connection(("127.0.0.1", 45303))
+        conn.sendall(b"\x00\x00\x00\x05garb!")
+        time.sleep(0.3)
+        stop.set()
+        thread.join(3)
+        conn.close()
+        self.assertEqual(errors, [])
+
     def test_wrong_secret_is_rejected(self):
         out = {}
         thread = threading.Thread(target=self._serve, args=("secret", 45302, out))
@@ -46,6 +76,21 @@ class LinkIntegrationTests(unittest.TestCase):
             Link.connect("127.0.0.1", 45302, "wrong", (1000, 800))
         thread.join(3)
         self.assertEqual(out.get("error"), "wrong secret")
+
+
+    @unittest.skipUnless(os.environ.get("DISPLAY"), "requires X11")
+    def test_injected_scroll_is_not_recaptured(self):
+        from crossmouse.platform_base import InputEvent
+        from crossmouse.platform_linux import LinuxPlatform
+
+        platform = LinuxPlatform()
+        seen = []
+        platform.start_capture(seen.append)
+        time.sleep(0.2)
+        platform.inject(InputEvent("scroll", 0, 1))
+        time.sleep(0.3)
+        platform.stop_capture()
+        self.assertEqual([e for e in seen if e.kind == "scroll"], [])
 
 
 @unittest.skipUnless(os.environ.get("DISPLAY"), "requires X11")

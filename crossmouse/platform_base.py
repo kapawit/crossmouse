@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable
 
@@ -47,3 +49,25 @@ class Platform:
 
     def release_all_keys(self) -> None:
         raise NotImplementedError
+
+    def set_suppress(self, value: bool) -> None:
+        pass
+
+    def remember_injection(self, event: InputEvent) -> None:
+        injected = getattr(self, "_injected", None)
+        if injected is None:
+            injected = self._injected = deque()
+        injected.append((event.kind, event.a, event.b, time.monotonic()))
+
+    def is_own_injection(self, event: InputEvent) -> bool:
+        injected = getattr(self, "_injected", None)
+        if not injected:
+            return False
+        now = time.monotonic()
+        while injected and now - injected[0][3] > 1.0:
+            injected.popleft()
+        for index, (kind, a, b, _) in enumerate(injected):
+            if (kind, a, b) == (event.kind, event.a, event.b):
+                del injected[index]
+                return True
+        return False

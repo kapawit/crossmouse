@@ -21,6 +21,7 @@ class Link:
         self._incoming: queue.Queue[tuple[str, dict] | None] = queue.Queue()
         self._send_lock = threading.Lock()
         self._closed = threading.Event()
+        self._dead = threading.Event()
         self._receiver = threading.Thread(target=self._receive_loop, daemon=True)
         self._receiver.start()
 
@@ -91,10 +92,15 @@ class Link:
         except queue.Empty:
             return None
 
+    @property
+    def alive(self) -> bool:
+        return not self._dead.is_set()
+
     def close(self) -> None:
         if self._closed.is_set():
             return
         self._closed.set()
+        self._dead.set()
         try:
             self._sock.shutdown(socket.SHUT_RDWR)
         except OSError:
@@ -125,6 +131,7 @@ class Link:
         except Exception:
             pass
         finally:
+            self._dead.set()
             if not self._closed.is_set():
                 self._incoming.put(None)
 
@@ -168,7 +175,7 @@ def serve_once(
                 continue
             try:
                 link = Link.accept(sock, secret, my_screen)
-            except AuthError:
+            except (AuthError, OSError, ValueError, KeyError, TypeError):
                 sock.close()
                 continue
             try:

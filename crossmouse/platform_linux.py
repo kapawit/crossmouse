@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 
 from Xlib import X, XK, display
 from Xlib.ext import record, xtest
@@ -68,6 +69,7 @@ class LinuxPlatform(Platform):
         self._thread: threading.Thread | None = None
         self._grabbed = False
         self._pressed_keys: set[int] = set()
+        self._warp_targets: deque[tuple[int, int, float]] = deque()
 
     def screen_size(self) -> tuple[int, int]:
         screen = self._display.screen()
@@ -78,8 +80,20 @@ class LinuxPlatform(Platform):
         return p.root_x, p.root_y
 
     def set_pointer(self, x: int, y: int) -> None:
+        self._warp_targets.append((int(x), int(y), time.monotonic()))
         xtest.fake_input(self._display, X.MotionNotify, x=int(x), y=int(y))
         self._display.sync()
+
+    def _is_own_warp(self, x: int, y: int) -> bool:
+        now = time.monotonic()
+        targets = self._warp_targets
+        while targets and now - targets[0][2] > 0.5:
+            targets.popleft()
+        for index, (wx, wy, _) in enumerate(targets):
+            if (wx, wy) == (x, y):
+                del targets[index]
+                return True
+        return False
 
     def grab(self) -> None:
         if self._grabbed:
@@ -141,23 +155,25 @@ class LinuxPlatform(Platform):
                 data, self._record_display.display, None, None
             )
             t = event.type
+            out: InputEvent | None = None
             if t == X.MotionNotify:
-                self._sink(InputEvent("move", int(event.root_x), int(event.root_y)))
+                x, y = int(event.root_x), int(event.root_y)
+                if self._is_own_warp(x, y):
+                    continue
+                out = InputEvent("move", x, y)
             elif t == X.ButtonPress:
-                translated = button_event(event.detail, 1)
-                if translated:
-                    self._sink(translated)
+                out = button_event(event.detail, 1)
             elif t == X.ButtonRelease:
-                translated = button_event(event.detail, 0)
-                if translated:
-                    self._sink(translated)
+                out = button_event(event.detail, 0)
             elif t in (X.KeyPress, X.KeyRelease):
                 keysym = self._display.keycode_to_keysym(event.detail, 0)
                 name = XK.keysym_to_string(keysym)
                 if not name:
                     continue
                 key = _canonical_key(name.decode() if isinstance(name, bytes) else name)
-                self._sink(InputEvent("key", key, 1 if t == X.KeyPress else 0))
+                out = InputEvent("key", key, 1 if t == X.KeyPress else 0)
+            if out is not None and not self.is_own_injection(out):
+                self._sink(out)
 
     def stop_capture(self) -> None:
         if self._record_context is not None:
@@ -171,18 +187,24 @@ class LinuxPlatform(Platform):
 
     def inject(self, event: InputEvent) -> None:
         d = self._display
+        if event.kind == "scroll":
+            direction = 1 if int(event.b) > 0 else -1
+            for _ in range(abs(int(event.b)) or 1):
+                self.remember_injection(InputEvent("scroll", 0, direction))
+        else:
+            self.remember_injection(event)
         if event.kind == "move":
             xtest.fake_input(d, X.MotionNotify, x=int(event.a), y=int(event.b))
         elif event.kind == "button":
             code = _BUTTON_CODES.get(str(event.a), 1)
             xtest.fake_input(
-                d, X.ButtonPress if event.b else X.ButtonRelease, button=code
+                d, X.ButtonPress if event.b else X.ButtonRelease, detail=code
             )
         elif event.kind == "scroll":
             button = 4 if int(event.b) > 0 else 5
             for _ in range(abs(int(event.b)) or 1):
-                xtest.fake_input(d, X.ButtonPress, button=button)
-                xtest.fake_input(d, X.ButtonRelease, button=button)
+                xtest.fake_input(d, X.ButtonPress, detail=button)
+                xtest.fake_input(d, X.ButtonRelease, detail=button)
         elif event.kind == "key":
             code = d.keysym_to_keycode(_keysym_for(str(event.a)))
             if code:
@@ -191,12 +213,12 @@ class LinuxPlatform(Platform):
                 else:
                     self._pressed_keys.discard(code)
                 xtest.fake_input(
-                    d, X.KeyPress if event.b else X.KeyRelease, keycode=code
+                    d, X.KeyPress if event.b else X.KeyRelease, detail=code
                 )
         d.sync()
 
     def release_all_keys(self) -> None:
         for code in list(self._pressed_keys):
-            xtest.fake_input(self._display, X.KeyRelease, keycode=code)
+            xtest.fake_input(self._display, X.KeyRelease, detail=code)
         self._pressed_keys.clear()
         self._display.sync()

@@ -33,7 +33,8 @@ def pump_link(engine, link, should_stop) -> None:
     while not should_stop():
         message = link.recv(timeout=0.2)
         if message is None:
-            if engine.link is None:
+            if engine.link is None or not link.alive:
+                engine.detach()
                 break
         else:
             engine.remote_message(*message)
