@@ -10,11 +10,13 @@ from crossmouse.link import AuthError, Link
 
 
 class LinkIntegrationTests(unittest.TestCase):
-    def _serve(self, secret, port, out):
+    def _serve(self, secret, port, out, ready=None):
         listener = socket.socket()
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("127.0.0.1", port))
         listener.listen(1)
+        if ready is not None:
+            ready.set()
         try:
             conn, _ = listener.accept()
             try:
@@ -30,8 +32,12 @@ class LinkIntegrationTests(unittest.TestCase):
 
     def test_handshake_and_encrypted_exchange(self):
         out = {}
-        thread = threading.Thread(target=self._serve, args=("secret", 45301, out))
+        ready = threading.Event()
+        thread = threading.Thread(
+            target=self._serve, args=("secret", 45301, out, ready), daemon=True
+        )
         thread.start()
+        self.assertTrue(ready.wait(2))
         link = Link.connect("127.0.0.1", 45301, "secret", (1000, 800))
         link.send("move", {"x": 5, "y": 6})
         thread.join(3)
@@ -70,8 +76,12 @@ class LinkIntegrationTests(unittest.TestCase):
 
     def test_wrong_secret_is_rejected(self):
         out = {}
-        thread = threading.Thread(target=self._serve, args=("secret", 45302, out))
+        ready = threading.Event()
+        thread = threading.Thread(
+            target=self._serve, args=("secret", 45302, out, ready), daemon=True
+        )
         thread.start()
+        self.assertTrue(ready.wait(2))
         with self.assertRaises(AuthError):
             Link.connect("127.0.0.1", 45302, "wrong", (1000, 800))
         thread.join(3)

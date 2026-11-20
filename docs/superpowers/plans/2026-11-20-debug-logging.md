@@ -127,29 +127,29 @@ git commit -m "feat: add runtime debug toggle endpoint"
 - Consumes: `App._debug` as optional `debug_sink`.
 - Produces: `Engine.debug_sink`, `Engine.debug_snapshot(reason: str) -> None`.
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 In `tests/test_engine.py`, create an engine with a debug sink that appends messages to a list, cross the edge to enter `controlling`, and assert that at least one emitted line contains `mode=controlling`, `local=(`, `virtual=(`, `edge=right`, and does not contain the configured secret.
 
-- [ ] **Step 2: Run test to verify RED**
+- [x] **Step 2: Run test to verify RED**
 
 Run: `PYTHONPATH=.deps:. python3 -m unittest tests.test_engine.EngineDebugTests -v`
 Expected: FAIL because `debug_sink` and `debug_snapshot` do not exist.
 
-- [ ] **Step 3: Implement engine diagnostics**
+- [x] **Step 3: Implement engine diagnostics**
 
 Add optional `debug_sink` to `Engine.__init__`; add `Engine._debug(message)` and `Engine.debug_snapshot(reason)` producing a single line with mode, role, link state, local pointer coordinates, virtual peer coordinates, local/peer screens, and edge. Call `debug_snapshot` on handoff start/end and remote handoff receipt. Add `_debug` transition lines next to the existing `log.info` handoff messages. Never include `config.secret`.
 
-- [ ] **Step 4: Sample snapshots while debug is on**
+- [x] **Step 4: Sample snapshots while debug is on**
 
 In `App.start()`, change the loop sleep to `0.1` seconds and call `self.engine.debug_snapshot("poll")` when `config.debug` is true and at least `0.25` seconds have elapsed since the last sample.
 
-- [ ] **Step 5: Run test to verify GREEN**
+- [x] **Step 5: Run test to verify GREEN**
 
 Run: `PYTHONPATH=.deps:. python3 -m unittest tests.test_engine.EngineDebugTests -v`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crossmouse/engine.py crossmouse/main.py tests/test_engine.py

@@ -82,7 +82,7 @@ class App:
         self.config = Config.from_file(self.config_path)
         self.platform = make_platform()
         self.clipboard = make_clipboard(self.platform)
-        self.engine = Engine(self.config, self.platform, self.clipboard)
+        self.engine = Engine(self.config, self.platform, self.clipboard, debug_sink=self._debug)
         self._debug_logger: DebugLogger | None = None
         self._last_debug_sample = 0.0
         self._lines: deque[str] = deque(maxlen=200)
@@ -223,7 +223,13 @@ class App:
         self._worker.start()
         try:
             while not self._stop.is_set():
-                time.sleep(0.5)
+                if (
+                    self.config.debug
+                    and time.monotonic() - self._last_debug_sample >= 0.25
+                ):
+                    self.engine.debug_snapshot("poll")
+                    self._last_debug_sample = time.monotonic()
+                time.sleep(0.1)
         except KeyboardInterrupt:
             pass
         finally:

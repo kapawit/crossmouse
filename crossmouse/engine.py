@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 
 from . import protocol
 from .clipboard import Clipboard
@@ -61,11 +62,13 @@ class Engine:
         platform: Platform,
         clipboard: Clipboard,
         clock=time.monotonic,
+        debug_sink: Callable[[str], None] | None = None,
     ) -> None:
         self.config = config
         self.platform = platform
         self.clipboard = clipboard
         self._clock = clock
+        self.debug_sink = debug_sink
         self.link: Link | None = None
         self.mode = "idle"
         self.local_screen = platform.screen_size()
@@ -80,9 +83,31 @@ class Engine:
         self._last_clip = ""
         self._clip_poll = 0.0
 
+    def _debug(self, message: str) -> None:
+        if self.debug_sink is not None:
+            self.debug_sink(message)
+
+    def debug_snapshot(self, reason: str) -> None:
+        if self.debug_sink is None:
+            return
+        x, y = self.platform.pointer_position()
+        role = "controller" if self.config.peer_ip else "listener"
+        self._debug(
+            f"pointer reason={reason} "
+            f"mode={self.mode} "
+            f"role={role} "
+            f"link={'on' if self.link is not None else 'off'} "
+            f"local=({x},{y}) "
+            f"virtual=({self._vx},{self._vy}) "
+            f"local_screen={self.local_screen[0]}x{self.local_screen[1]} "
+            f"peer_screen={self.peer_screen[0]}x{self.peer_screen[1]} "
+            f"edge={self.config.edge}"
+        )
+
     def attach(self, link: Link) -> None:
         self.link = link
         self.peer_screen = link.peer_screen
+        self.debug_snapshot("link-attached")
         log.info("peer attached, screen %s", self.peer_screen)
 
     def request_handoff(self) -> None:
@@ -105,6 +130,7 @@ class Engine:
         self._idle_last = None
         self.mode = "idle"
         self.link = None
+        self.debug_snapshot("link-detached")
 
     def local_event(self, event: InputEvent) -> None:
         link = self.link
@@ -125,6 +151,10 @@ class Engine:
                     not at_edge(self.config.edge, previous[0], previous[1], w, h)
                     or moving_outward(self.config.edge, x, y, *previous)
                 ):
+                    self._debug(
+                        f"edge trigger edge={self.config.edge} "
+                        f"local=({x},{y}) previous=({previous[0]},{previous[1]})"
+                    )
                     self._begin_controlling(x, y)
         elif self.mode == "controlling":
             self._forward(event)
@@ -149,6 +179,8 @@ class Engine:
         self._last_pointer = center
         self._idle_last = None
         self.mode = "controlling"
+        self.debug_snapshot("handoff-start")
+        self._debug("pointer grabbed; local input suppressed")
         self._send(protocol.HANDOFF, {"from": "controlling"})
         self._send(protocol.MOVE, {"x": self._vx, "y": self._vy})
         log.info("controlling peer")
@@ -188,6 +220,8 @@ class Engine:
         self.platform.release_all_keys()
         self._idle_last = None
         self.mode = "idle"
+        self.debug_snapshot("handoff-end")
+        self._debug("pointer released; suppression off")
         self._send(protocol.HANDOFF, {"from": "controlled"})
         log.info("control returned locally")
 
@@ -198,6 +232,7 @@ class Engine:
                 self._remote_first = True
                 self.platform.release_all_keys()
                 self.platform.set_pointer_visible(True)
+                self.debug_snapshot("remote-controlling")
                 log.info("peer is controlling us")
             else:
                 self.mode = "idle"
@@ -205,6 +240,7 @@ class Engine:
                 self.platform.set_pointer_visible(True)
                 self.platform.release_all_keys()
                 self._idle_last = None
+                self.debug_snapshot("remote-resumed")
                 log.info("peer resumed local control")
         elif self.mode == "controlled":
             if kind == protocol.MOVE:
@@ -221,6 +257,7 @@ class Engine:
                     self.platform.set_pointer_visible(True)
                     self.platform.release_all_keys()
                     self._idle_last = None
+                    self.debug_snapshot("remote-handoff-back")
                     self._send(protocol.HANDOFF, {"from": "controlled"})
                     self._last_remote_x, self._last_remote_y = x, y
                     return
@@ -254,4 +291,5 @@ class Engine:
             try:
                 self.link.send(kind, data)
             except OSError:
+                self._debug(f"send failed kind={kind}")
                 log.warning("failed to send %s", kind)

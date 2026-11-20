@@ -219,6 +219,35 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(engine.mode, "idle")
 
 
+class EngineDebugTests(unittest.TestCase):
+    def test_snapshot_logs_mode_coordinates_and_no_secret(self):
+        lines: list[str] = []
+        secret = "TOP-SECRET-DO-NOT-LOG"
+        platform = FakePlatform()
+        engine = Engine(
+            Config(secret=secret, edge="right"),
+            platform,
+            FakeClipboard(),
+            debug_sink=lines.append,
+        )
+        engine.attach(FakeLink())
+
+        engine.local_event(InputEvent("move", 900, 400))
+        engine.local_event(InputEvent("move", 999, 400))
+
+        self.assertTrue(lines)
+        self.assertTrue(
+            any(
+                "mode=controlling" in line
+                and "local=(" in line
+                and "virtual=(" in line
+                and "edge=right" in line
+                for line in lines
+            )
+        )
+        self.assertFalse(any(secret in line for line in lines))
+
+
 class PumpLinkTests(unittest.TestCase):
     def test_clipboard_polled_without_messages(self):
         from crossmouse.main import pump_link
