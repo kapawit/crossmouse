@@ -1,5 +1,9 @@
 Type: grilling
-Status: open
+Status: resolved
+
+## Answer
+
+Human opted out of ticket grilling; calls made by the executor and recorded in the map's Notes and `README.md`: config-fixed connector/listener; fixed configurable port; PBKDF2-HMAC-SHA256 + salted AES-GCM handshake probe; explicit pairing mode with no extra identity pinning.
 
 ## Question
 

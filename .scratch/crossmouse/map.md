@@ -1,6 +1,6 @@
 ## Destination
 
-A hand-off spec / implementation plan for **CrossMouse**: a stripped-down, bidirectional Mouse-Without-Borders-style tool that lets one mouse and keyboard drive two machines (Linux X11 + Windows) over a LAN, paired by manual IP + shared secret, with plain-text clipboard sync. The map is done when every design decision is resolved and the spec can be written and handed to an implementer.
+All design decisions for **CrossMouse** are resolved, so a hand-off spec / implementation plan can be written and given to an implementer. CrossMouse is a stripped-down, bidirectional Mouse-Without-Borders-style tool that lets one mouse and keyboard drive two machines (Linux X11 + Windows) over a LAN, paired by manual IP + shared secret, with plain-text clipboard sync.
 
 ## Notes
 
@@ -15,10 +15,12 @@ A hand-off spec / implementation plan for **CrossMouse**: a stripped-down, bidir
   - Single cross-platform codebase; X11 only on Linux (Wayland out of scope).
   - TCP link with authenticated encryption keyed from the shared secret.
   - Edge-crossing handoff, panic hotkey, and held-key cleanup on handoff.
+- **Implementation calls made (human opted out of ticket grilling, 2026-11-20)**: Python single codebase; PBKDF2-HMAC-SHA256 + AES-GCM with a salted handshake probe; fixed configurable port; explicit connector/listener roles; no identity pinning beyond IP + secret; pointer warp to screen centre while forwarding (no true grab on Windows); X11 CLIPBOARD selection for text sync. See `README.md`.
 
 ## Decisions so far
 
-<!-- one line per closed ticket: gist + link, never the full answer -->
+- [Research: Input capture/injection libraries](./issues/01-input-library-research.md): `rdev` is the only named library with global capture + injection on both Windows and Linux X11, but its release is stale; `enigo` is maintained but injection-only; `pynput` is maintained with both but has Windows key-fidelity caveats.
+- [Research: OS permissions & autostart](./issues/02-os-permissions-research.md): X11 needs no root (just an authorized X connection); Windows UIPI limits injection to equal-or-lower integrity unless `uiAccess` + signing; autostart via XDG / `systemd --user` and Startup folder / Task Scheduler.
 
 ## Not yet specified
 
@@ -26,8 +28,6 @@ A hand-off spec / implementation plan for **CrossMouse**: a stripped-down, bidir
 - Screen topology and coordinate mapping across differing resolutions / DPI scaling (hangs on handoff design and language choice).
 - Key-derivation function and handshake message details (hangs on the pairing protocol).
 - Wire message schema and framing details (hangs on the protocol ticket).
-- Performance / latency targets for mouse movement (hangs on input-library research).
-- Autostart and install/packaging mechanics (hangs on OS-permissions research).
 - Per-peer multi-monitor behaviour.
 
 ## Out of scope

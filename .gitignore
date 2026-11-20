@@ -1,0 +1,6 @@
+.deps/
+__pycache__/
+*.pyc
+config.json
+dist/
+.deb-build/

@@ -1,0 +1,7 @@
+{
+  "secret": "change-me-to-a-long-random-phrase",
+  "peer_ip": "192.168.1.42",
+  "port": 52800,
+  "edge": "right",
+  "clipboard": true
+}

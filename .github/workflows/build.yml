@@ -1,0 +1,35 @@
+name: build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --target .deps -r requirements.txt
+      - name: Build .deb
+        run: chmod +x packaging/build-deb.sh && ./packaging/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crossmouse-deb
+          path: dist/*.deb
+
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build .exe
+        run: powershell -File packaging/build-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crossmouse-exe
+          path: dist/CrossMouse.exe

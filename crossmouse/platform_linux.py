@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import threading
+import time
+
+from Xlib import X, XK, display
+from Xlib.ext import record, xtest
+from Xlib.protocol import rq
+
+from .platform_base import EventSink, InputEvent, Platform
+
+_BUTTONS = {1: "left", 2: "middle", 3: "right"}
+_BUTTON_CODES = {v: k for k, v in _BUTTONS.items()}
+
+_KEY_ALIASES = {
+    "ctrl": "Control_L",
+    "shift": "Shift_L",
+    "alt": "Alt_L",
+    "super": "Super_L",
+    "enter": "Return",
+    "esc": "Escape",
+    "escape": "Escape",
+    "space": "space",
+    "backspace": "BackSpace",
+    "delete": "Delete",
+    "tab": "Tab",
+    "up": "Up",
+    "down": "Down",
+    "left": "Left",
+    "right": "Right",
+    "home": "Home",
+    "end": "End",
+    "pageup": "Prior",
+    "pagedown": "Next",
+    "plus": "plus",
+    "minus": "minus",
+}
+
+
+def _canonical_key(keysym_name: str) -> str:
+    name = keysym_name.lower()
+    reverse = {v.lower(): k for k, v in _KEY_ALIASES.items()}
+    if name in reverse:
+        return reverse[name]
+    return name
+
+
+def _keysym_for(key: str) -> int:
+    name = _KEY_ALIASES.get(key.lower(), key)
+    return XK.string_to_keysym(name)
+
+
+class LinuxPlatform(Platform):
+    def __init__(self, display_name: str | None = None) -> None:
+        self._display_name = display_name
+        self._display = display.Display(display_name)
+        self._root = self._display.screen().root
+        self._record_display: display.Display | None = None
+        self._sink: EventSink | None = None
+        self._record_context = None
+        self._thread: threading.Thread | None = None
+        self._grabbed = False
+        self._pressed_keys: set[int] = set()
+
+    def screen_size(self) -> tuple[int, int]:
+        screen = self._display.screen()
+        return screen.width_in_pixels, screen.height_in_pixels
+
+    def pointer_position(self) -> tuple[int, int]:
+        p = self._root.query_pointer()
+        return p.root_x, p.root_y
+
+    def set_pointer(self, x: int, y: int) -> None:
+        xtest.fake_input(self._display, X.MotionNotify, x=int(x), y=int(y))
+        self._display.sync()
+
+    def grab(self) -> None:
+        if self._grabbed:
+            return
+        self._root.grab_pointer(
+            False,
+            X.PointerMotionMask | X.ButtonPressMask | X.ButtonReleaseMask,
+            X.GrabModeAsync,
+            X.GrabModeAsync,
+            X.NONE,
+            X.NONE,
+            X.CurrentTime,
+        )
+        self._grabbed = True
+
+    def ungrab(self) -> None:
+        if not self._grabbed:
+            return
+        self._display.ungrab_pointer(X.CurrentTime)
+        self._display.sync()
+        self._grabbed = False
+
+    def start_capture(self, sink: EventSink) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._sink = sink
+        self._record_display = display.Display(self._display_name)
+        self._record_context = self._record_display.record_create_context(
+            0,
+            [record.AllClients],
+            [
+                {
+                    "core_requests": (0, 0),
+                    "core_replies": (0, 0),
+                    "ext_requests": (0, 0, 0, 0),
+                    "ext_replies": (0, 0, 0, 0),
+                    "delivered_events": (0, 0),
+                    "device_events": (X.KeyPress, X.MotionNotify),
+                    "errors": (0, 0),
+                    "client_started": False,
+                    "client_died": False,
+                }
+            ],
+        )
+        self._thread = threading.Thread(
+            target=self._record_display.record_enable_context,
+            args=(self._record_context, self._handle),
+            daemon=True,
+        )
+        self._thread.start()
+
+    def _handle(self, reply) -> None:
+        if not hasattr(reply, "data") or self._sink is None:
+            return
+        data = reply.data
+        field = rq.EventField(None)
+        while len(data) >= 32:
+            event, data = field.parse_binary_value(
+                data, self._record_display.display, None, None
+            )
+            t = event.type
+            if t == X.MotionNotify:
+                self._sink(InputEvent("move", int(event.root_x), int(event.root_y)))
+            elif t == X.ButtonPress:
+                self._sink(InputEvent("button", _BUTTONS.get(event.detail, "left"), 1))
+            elif t == X.ButtonRelease:
+                self._sink(InputEvent("button", _BUTTONS.get(event.detail, "left"), 0))
+            elif t in (X.KeyPress, X.KeyRelease):
+                keysym = self._display.keycode_to_keysym(event.detail, 0)
+                name = XK.keysym_to_string(keysym)
+                if not name:
+                    continue
+                key = _canonical_key(name.decode() if isinstance(name, bytes) else name)
+                self._sink(InputEvent("key", key, 1 if t == X.KeyPress else 0))
+
+    def stop_capture(self) -> None:
+        if self._record_context is not None:
+            try:
+                self._record_display.record_disable_context(self._record_context)
+                self._record_display.record_free_context(self._record_context)
+            except Exception:
+                pass
+            self._record_context = None
+        self._sink = None
+
+    def inject(self, event: InputEvent) -> None:
+        d = self._display
+        if event.kind == "move":
+            xtest.fake_input(d, X.MotionNotify, x=int(event.a), y=int(event.b))
+        elif event.kind == "button":
+            code = _BUTTON_CODES.get(str(event.a), 1)
+            xtest.fake_input(
+                d, X.ButtonPress if event.b else X.ButtonRelease, button=code
+            )
+        elif event.kind == "scroll":
+            button = 4 if int(event.b) > 0 else 5
+            for _ in range(abs(int(event.b)) or 1):
+                xtest.fake_input(d, X.ButtonPress, button=button)
+                xtest.fake_input(d, X.ButtonRelease, button=button)
+        elif event.kind == "key":
+            code = d.keysym_to_keycode(_keysym_for(str(event.a)))
+            if code:
+                if event.b:
+                    self._pressed_keys.add(code)
+                else:
+                    self._pressed_keys.discard(code)
+                xtest.fake_input(
+                    d, X.KeyPress if event.b else X.KeyRelease, keycode=code
+                )
+        d.sync()
+
+    def release_all_keys(self) -> None:
+        for code in list(self._pressed_keys):
+            xtest.fake_input(self._display, X.KeyRelease, keycode=code)
+        self._pressed_keys.clear()
+        self._display.sync()
