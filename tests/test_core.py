@@ -95,7 +95,6 @@ class AppStatusTests(unittest.TestCase):
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
-        app._ui_port = 7788
 
         with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.23"):
             status = app.status()
@@ -111,7 +110,6 @@ class AppStatusTests(unittest.TestCase):
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s", "debug": True})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
-        app._ui_port = 7788
 
         with mock.patch("crossmouse.main.local_ip_address", return_value="127.0.0.1"):
             status = app.status()
@@ -127,7 +125,6 @@ class AppStatusTests(unittest.TestCase):
         app.role = "controller"
         app.config = Config.from_dict({"secret": "s", "peer_ip": "192.168.1.5"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
-        app._ui_port = 7788
 
         with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
             status = app.status()
@@ -145,7 +142,6 @@ class AppStatusTests(unittest.TestCase):
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
-        app._ui_port = 7788
 
         with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
             status = app.status()
@@ -194,7 +190,7 @@ class AppDebugTests(unittest.TestCase):
             mock.patch("crossmouse.main.Engine", return_value=engine),
             mock.patch("crossmouse.main.local_ip_address", return_value="127.0.0.1"),
         ):
-            app = App(config_path, enable_ui=False, open_browser=False)
+            app = App(config_path)
         return app.status()
 
     def test_startup_is_manual_when_auto_start_disabled(self):
@@ -325,7 +321,7 @@ class AppDebugTests(unittest.TestCase):
                 mock.patch("crossmouse.main.Engine", return_value=engine),
                 mock.patch("crossmouse.main.debug_log_path", return_value=log_path),
             ):
-                app = App(config_path, enable_ui=False, open_browser=False)
+                app = App(config_path)
             try:
                 self.assertIsNotNone(app._debug_logger)
                 self.assertIn("Startup with debug logging enabled", log_path.read_text())
@@ -355,7 +351,7 @@ class AppDebugTests(unittest.TestCase):
                 mock.patch("crossmouse.main.Engine", return_value=engine),
                 mock.patch("crossmouse.main.debug_log_path", side_effect=OSError("no log")),
             ):
-                app = App(config_path, enable_ui=False, open_browser=False)
+                app = App(config_path)
             self.assertIsNone(app._debug_logger)
 
     def test_connect_failure_is_written_to_debug_log(self):
@@ -399,7 +395,6 @@ class AppDebugTests(unittest.TestCase):
             app._paused = False
             app.connected = False
             app.role = "controller"
-            app._ui_port = 7788
             app._wait = mock.Mock()
             logger = mock.Mock()
             app._debug_logger = logger

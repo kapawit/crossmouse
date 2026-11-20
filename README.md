@@ -12,7 +12,7 @@ Working prototype. The Linux side is exercised against a live X server; the Wind
 python3 -m pip install --target .deps -r requirements.txt
 ```
 
-`cryptography` is required at runtime; `python-xlib` is required on Linux. `.deps` is gitignored. The `run.sh` wrapper puts `.deps` on `PYTHONPATH`.
+`cryptography` and `PySide6` are required at runtime; `python-xlib` is required on Linux. `.deps` is gitignored. The `run.sh` wrapper puts `.deps` on `PYTHONPATH`.
 
 ## Configure
 
@@ -34,7 +34,7 @@ Example: machine A has `peer_ip` set, `edge: "right"`, and `primary: true`; mach
 ./run.sh --config config.json
 ```
 
-By default a control panel opens at `http://127.0.0.1:7788/`. It shows link status, active control, and an event log. The configuration card has **Listener / Controller** tabs: Controller requires the peer IP, Listener waits for an incoming connection. Buttons let you save and reconnect, reconnect, disconnect, and request a handoff. Use `--no-ui` for headless operation, `--ui-port N` to change the port, and `--no-browser` to suppress auto-opening the browser.
+By default a native desktop window opens. The status page shows link state, a large Connect/Disconnect switch, Listener/Controller pills (locked while connected), a listener address strip, connected-only details, and a Hand off button. **Settings** opens a sheet with Configuration and Event log tabs; the shared secret has View/Hide and Copy controls. Closing the window hides it to the system tray when a tray is available, otherwise it stops the app. Use `--no-ui` for headless operation.
 
 The connector retries every two seconds; the listener accepts a single authenticated session at a time.
 
@@ -54,7 +54,7 @@ python3 -m pip install --target .deps -r requirements.txt
 sudo dpkg -i dist/crossmouse_0.1.0_amd64.deb
 ```
 
-The package installs the launcher `/usr/bin/crossmouse` and a desktop entry. On first launch it creates a user-owned config at `~/.config/crossmouse/config.json` and opens the control panel in your browser. `/etc/crossmouse/config.json` is only a system-wide example; pass `--config /etc/crossmouse/config.json` to use it explicitly.
+The package installs the launcher `/usr/bin/crossmouse` and a desktop entry that opens the native window. On first launch it creates a user-owned config at `~/.config/crossmouse/config.json`. `/etc/crossmouse/config.json` is only a system-wide example; pass `--config /etc/crossmouse/config.json` to use it explicitly.
 
 **Windows (.exe)** — PyInstaller cannot cross-compile, so this must be built on Windows (or by the included GitHub Actions workflow):
 
@@ -93,5 +93,5 @@ OS-specific targets: `build-linux`, `install-linux`, `build-windows`, `install-w
 ## Tests
 
 ```bash
-PYTHONPATH=.deps:. python3 -m unittest discover -s tests -v
+QT_QPA_PLATFORM=offscreen PYTHONPATH=.deps:. python3 -m unittest discover -s tests -v
 ```

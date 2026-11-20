@@ -7,10 +7,18 @@ a = Analysis(
     [str(root / "packaging" / "launcher.py")],
     pathex=[str(root)],
     binaries=[],
-    datas=[(str(root / "crossmouse" / "ui" / "index.html"), "crossmouse/ui")],
+    datas=[
+        (
+            str(root / "packaging" / "THIRD_PARTY_LICENSES.md"),
+            "licenses",
+        )
+    ],
     hiddenimports=[
         "crossmouse.platform_win",
-        "crossmouse.webui",
+        "crossmouse.native_ui",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
         "crossmouse.clipboard",
         "crossmouse.engine",
         "crossmouse.link",

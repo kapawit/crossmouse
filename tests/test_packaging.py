@@ -9,6 +9,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class NativeUIPackagingTests(unittest.TestCase):
+    def test_windows_spec_bundles_native_ui(self):
+        spec = (ROOT / "packaging" / "CrossMouse.spec").read_text()
+        self.assertIn("crossmouse.native_ui", spec)
+        self.assertNotIn("crossmouse.webui", spec)
+
+    def test_deb_bundles_pyside6(self):
+        script = (ROOT / "packaging" / "build-deb.sh").read_text()
+        self.assertIn("PySide6", script)
+
+    def test_deb_declares_qt_xcb_cursor_dependency(self):
+        script = (ROOT / "packaging" / "build-deb.sh").read_text()
+        self.assertIn("libxcb-cursor0", script)
+
+    def test_deb_ships_license_notices(self):
+        script = (ROOT / "packaging" / "build-deb.sh").read_text()
+        self.assertIn("LICENSE", script)
+
+    def test_build_artifacts_are_not_tracked(self):
+        result = subprocess.run(
+            ["git", "ls-files", "dist"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_windows_spec_ships_license_notices(self):
+        spec = (ROOT / "packaging" / "CrossMouse.spec").read_text()
+        self.assertIn("LICENSE", spec)
+
+
 class WindowsEntryPointTests(unittest.TestCase):
     def test_frozen_entry_point_starts_without_relative_import_error(self):
         scripts = []

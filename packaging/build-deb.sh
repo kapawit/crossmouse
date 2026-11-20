@@ -6,6 +6,10 @@ VERSION="${1:-0.1.0}"
 OUT="$ROOT/dist"
 PKG="$ROOT/.deb-build/crossmouse"
 
+if [ ! -d "$ROOT/.deps/PySide6" ]; then
+  python3 -m pip install --target "$ROOT/.deps" "PySide6>=6.6"
+fi
+
 rm -rf "$ROOT/.deb-build" "$OUT"
 mkdir -p "$PKG/DEBIAN" "$PKG/usr/lib/crossmouse" "$PKG/usr/bin" \
          "$PKG/usr/share/applications" "$PKG/etc/crossmouse" "$OUT"
@@ -16,6 +20,7 @@ rm -rf "$PKG/usr/lib/crossmouse/__pycache__"
 find "$PKG/usr/lib/crossmouse" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 mkdir -p "$PKG/usr/share/doc/crossmouse"
 cp "$ROOT/README.md" "$PKG/usr/share/doc/crossmouse/"
+cp "$ROOT/packaging/THIRD_PARTY_LICENSES.md" "$PKG/usr/share/doc/crossmouse/LICENSE"
 cp "$ROOT/config.example.json" "$PKG/etc/crossmouse/config.json"
 
 cat > "$PKG/DEBIAN/control" <<EOF
@@ -24,7 +29,7 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: python3 (>= 3.10), python3-cryptography
+Depends: python3 (>= 3.10), python3-cryptography, libegl1, libgl1, libxkbcommon-x11-0, libxcb-cursor0, libxcb-xinerama0, libdbus-1-3, libfontconfig1
 Maintainer: CrossMouse <crossmouse@local>
 Description: Share one mouse and keyboard between two machines over LAN
  CrossMouse lets one mouse and keyboard drive a Linux and a Windows

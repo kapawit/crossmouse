@@ -8,7 +8,6 @@ import socket
 import sys
 import threading
 import time
-import webbrowser
 from collections import deque
 from pathlib import Path
 
@@ -71,13 +70,7 @@ def pump_link(engine, link, should_stop) -> None:
 
 
 class App:
-    def __init__(
-        self,
-        config_path: str,
-        enable_ui: bool = True,
-        ui_port: int = 7788,
-        open_browser: bool = True,
-    ) -> None:
+    def __init__(self, config_path: str) -> None:
         self.config_path = Path(config_path)
         self.config = Config.from_file(self.config_path)
         self.platform = make_platform()
@@ -98,10 +91,6 @@ class App:
         self._worker: threading.Thread | None = None
         self.connected = False
         self.role = "listener"
-        self.enable_ui = enable_ui
-        self.ui = None
-        self._ui_port = ui_port
-        self._open_browser = open_browser
         self.platform.start_capture(self.engine.local_event)
         self._log("CrossMouse started")
         if self.config.debug:
@@ -184,7 +173,6 @@ class App:
             "debug": bool(self.config.debug),
             "local_screen": list(self.engine.local_screen),
             "peer_screen": list(self.engine.peer_screen),
-            "ui_port": self._ui_port,
         }
 
     def save_config(self, data: dict) -> bool:
@@ -236,16 +224,14 @@ class App:
         self._debug("Handoff requested")
         self._log("Handoff requested")
 
-    def start(self) -> None:
-        if self.enable_ui:
-            from .webui import WebUI
-
-            self.ui = WebUI(self, port=self._ui_port)
-            self.ui.start()
-            if self._open_browser:
-                webbrowser.open(f"http://127.0.0.1:{self._ui_port}/")
+    def start_background(self) -> None:
+        if self._worker and self._worker.is_alive():
+            return
         self._worker = threading.Thread(target=self._network_loop, daemon=True)
         self._worker.start()
+
+    def start(self) -> None:
+        self.start_background()
         try:
             while not self._stop.is_set():
                 if (
@@ -263,8 +249,6 @@ class App:
     def stop(self) -> None:
         self._stop.set()
         self.disconnect()
-        if self.ui:
-            self.ui.stop()
         self.platform.stop_capture()
         self.platform.ungrab()
         self.platform.set_pointer_visible(True)
@@ -345,9 +329,7 @@ class App:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CrossMouse - share one mouse and keyboard over LAN")
     parser.add_argument("--config", default=None, help="path to config JSON")
-    parser.add_argument("--no-ui", action="store_true", help="run headless without the web UI")
-    parser.add_argument("--ui-port", type=int, default=7788)
-    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--no-ui", action="store_true", help="run headless without the native UI")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -359,12 +341,13 @@ def main(argv: list[str] | None = None) -> int:
     config_path = Path(args.config) if args.config else default_config_path()
     ensure_config(config_path)
 
-    App(
-        config_path=config_path,
-        enable_ui=not args.no_ui,
-        ui_port=args.ui_port,
-        open_browser=not args.no_browser,
-    ).start()
+    app = App(config_path=config_path)
+    if args.no_ui:
+        app.start()
+    else:
+        from .native_ui import NativeUI
+
+        NativeUI.start(app)
     return 0
 
 

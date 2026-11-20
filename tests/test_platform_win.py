@@ -303,6 +303,11 @@ class WindowsModuleImportTests(unittest.TestCase):
 
 
 class Windows64BitPrototypeTests(unittest.TestCase):
+    def test_wndclass_cursor_field_uses_portable_handle(self):
+        module = import_platform_win({"user32": FakeDLL(), "kernel32": FakeDLL()})
+        fields = dict(module.WNDCLASSW._fields_)
+        self.assertIs(fields["hCursor"], wintypes.HANDLE)
+
     def test_pointer_sized_results_have_pointer_sized_restypes(self):
         dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
         import_platform_win(dlls)
