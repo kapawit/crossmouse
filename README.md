@@ -70,6 +70,18 @@ The link is TCP with AES-GCM. The session key comes from PBKDF2-HMAC-SHA256 over
 - Clipboard is plain text only, last write wins. No image/file transfer.
 - Two peers only; no discovery.
 
+## Makefile
+
+```bash
+make build            # .deb on Linux, CrossMouse.exe on Windows
+make install          # build then install
+make run              # run from source
+make test             # test suite
+make clean            # remove build artifacts
+```
+
+OS-specific targets: `build-linux`, `install-linux`, `build-windows`, `install-windows`. On Windows use GNU make from MSYS2, Chocolatey, or Git Bash. `install-windows` copies the exe to `%LOCALAPPDATA%\Programs\CrossMouse` and adds a Start Menu shortcut; `install-linux` installs the `.deb` via `sudo` (override with `SUDO=`).
+
 ## Tests
 
 ```bash
