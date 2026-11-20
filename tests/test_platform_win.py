@@ -25,10 +25,13 @@ def deref(value):
 
 
 class FakeDLL:
-    def __init__(self) -> None:
+    def __init__(self, missing=()) -> None:
         self._funcs: dict[str, FakeFunc] = {}
+        self._missing = set(missing)
 
     def __getattr__(self, name: str) -> FakeFunc:
+        if name in self._missing:
+            raise AttributeError(f"function '{name}' not found")
         if name not in self._funcs:
             self._funcs[name] = FakeFunc()
         return self._funcs[name]
@@ -146,9 +149,12 @@ def capture_mouse_hook():
 
 def capture_raw_input(payload):
     """Start capture with fake Win32 calls and expose the raw-input window proc."""
-    dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
+    dlls = {
+        "user32": FakeDLL(missing={"UnregisterRawInputDevices"}),
+        "kernel32": FakeDLL(),
+    }
     events = []
-    state = {"wndproc": None}
+    state = {"wndproc": None, "registrations": []}
 
     def register_class(class_ptr):
         wc = deref(class_ptr)
@@ -162,18 +168,16 @@ def capture_raw_input(payload):
 
     def register_raw_devices(devices, count, size):
         device = deref(devices)
-        state["registration"] = (
+        call = (
             device.usUsagePage,
             device.usUsage,
             device.dwFlags,
+            device.hwndTarget,
             count,
             size,
         )
-        return 1
-
-    def unregister_raw_devices(devices, count, size):
-        device = deref(devices)
-        state["unregistered"] = (device.usUsagePage, device.usUsage, count, size)
+        state["registrations"].append(call)
+        state["registration"] = call[:3] + call[4:]
         return 1
 
     def get_raw_input_data(handle, command, buffer, size_ptr, header_size):
@@ -196,7 +200,6 @@ def capture_raw_input(payload):
     dlls["user32"]._funcs["RegisterClassW"] = register_class
     dlls["user32"]._funcs["CreateWindowExW"] = create_window
     dlls["user32"]._funcs["RegisterRawInputDevices"] = register_raw_devices
-    dlls["user32"]._funcs["UnregisterRawInputDevices"] = unregister_raw_devices
     dlls["user32"]._funcs["GetRawInputData"] = get_raw_input_data
     dlls["user32"]._funcs["DestroyWindow"] = destroy_window
     dlls["user32"]._funcs["UnregisterClassW"] = unregister_class
@@ -264,7 +267,10 @@ class WindowsRawInputTests(unittest.TestCase):
 
         platform.stop_capture()
 
-        self.assertEqual(state["unregistered"][0], 1)
+        self.assertEqual(len(state["registrations"]), 2)
+        removal = state["registrations"][1]
+        self.assertEqual(removal[:3], (1, 2, module.RIDEV_REMOVE))
+        self.assertIsNone(removal[3])
 
 
 class WindowsPointerVisibilityTests(unittest.TestCase):
@@ -300,6 +306,16 @@ class WindowsModuleImportTests(unittest.TestCase):
     def test_platform_win_imports_without_wintypes_lresult(self):
         module = import_platform_win({"user32": FakeDLL(), "kernel32": FakeDLL()})
         self.assertTrue(callable(module.HOOKPROC))
+
+    def test_platform_win_imports_without_unexported_raw_input_api(self):
+        dlls = {
+            "user32": FakeDLL(missing={"UnregisterRawInputDevices"}),
+            "kernel32": FakeDLL(),
+        }
+
+        module = import_platform_win(dlls)
+
+        self.assertEqual(module.RIDEV_REMOVE, 0x00000001)
 
 
 class Windows64BitPrototypeTests(unittest.TestCase):

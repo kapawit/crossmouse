@@ -35,6 +35,7 @@ WM_INPUT = 0x00FF
 RID_INPUT = 0x10000003
 RIM_TYPEMOUSE = 0
 RIDEV_INPUTSINK = 0x00000100
+RIDEV_REMOVE = 0x00000001
 HID_USAGE_PAGE_GENERIC = 1
 HID_USAGE_GENERIC_MOUSE = 2
 MOUSE_MOVE_ABSOLUTE = 0x01
@@ -222,8 +223,6 @@ user32.UnregisterClassW.argtypes = [wintypes.LPCWSTR, wintypes.HINSTANCE]
 user32.UnregisterClassW.restype = wintypes.BOOL
 user32.RegisterRawInputDevices.argtypes = [ctypes.POINTER(RAWINPUTDEVICE), wintypes.UINT, wintypes.UINT]
 user32.RegisterRawInputDevices.restype = wintypes.BOOL
-user32.UnregisterRawInputDevices.argtypes = [ctypes.POINTER(RAWINPUTDEVICE), wintypes.UINT, wintypes.UINT]
-user32.UnregisterRawInputDevices.restype = wintypes.BOOL
 user32.GetRawInputData.argtypes = [
     wintypes.HANDLE, wintypes.UINT, wintypes.LPVOID,
     ctypes.POINTER(wintypes.UINT), wintypes.UINT,
@@ -408,10 +407,16 @@ class WindowsPlatform(Platform):
 
     def stop_capture(self) -> None:
         if self._raw_device is not None:
-            user32.UnregisterRawInputDevices(
-                ctypes.byref(self._raw_device),
+            removal = RAWINPUTDEVICE(
+                self._raw_device.usUsagePage,
+                self._raw_device.usUsage,
+                RIDEV_REMOVE,
+                None,
+            )
+            user32.RegisterRawInputDevices(
+                ctypes.byref(removal),
                 1,
-                ctypes.sizeof(self._raw_device),
+                ctypes.sizeof(removal),
             )
             self._raw_device = None
         if self._window:
