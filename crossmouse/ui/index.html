@@ -304,9 +304,27 @@ function linkText() {
   return 'Not connected';
 }
 
+function isListening() {
+  return state.role === 'listener' && !state.paused && !state.connected;
+}
+
+function switchActive() {
+  return state.connected || isListening();
+}
+
+function switchLabel() {
+  if (state.connected) return state.role === 'listener' ? 'Connected' : 'Disconnect';
+  return isListening() ? 'Listening' : 'Connect';
+}
+
+function toggleAction() {
+  return state.connected || isListening() ? 'disconnect' : 'connect';
+}
+
 function switchHtml() {
-  return '<button role="switch" aria-checked="' + state.connected + '" class="switch ' + (state.connected ? 'on' : '') + '" data-act="toggle">' +
-    '<span class="knob"></span><span class="label">' + (state.connected ? 'Disconnect' : 'Connect') + '</span></button>';
+  const active = switchActive();
+  return '<button role="switch" aria-checked="' + active + '" class="switch ' + (active ? 'on' : '') + '" data-act="toggle">' +
+    '<span class="knob"></span><span class="label">' + switchLabel() + '</span></button>';
 }
 
 function roleHtml() {
@@ -554,7 +572,7 @@ document.addEventListener('click', async e => {
   if (!b) return;
   const act = b.dataset.act;
   if (act === 'toggle') {
-    await action(state.connected ? 'disconnect' : 'connect');
+    await action(toggleAction());
   } else if (act === 'cog') {
     state.view = 'settings';
     state.saveMessage = '';

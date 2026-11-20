@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -520,6 +522,72 @@ class AppDebugTests(unittest.TestCase):
             self.assertTrue(app.config.auto_start)
             self.assertFalse(app._paused)
             app._reconnect.set.assert_called_once_with()
+
+
+class AppListenerTests(unittest.TestCase):
+    @staticmethod
+    def _app(directory, port):
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.config_path = Path(directory) / "config.json"
+        app.config = Config.from_dict({"secret": "s", "port": port})
+        app.config_path.write_text(json.dumps(app.config.to_dict()))
+        app.engine = SimpleNamespace(
+            config=app.config,
+            link=None,
+            detach=mock.Mock(),
+            mode="idle",
+            local_screen=(800, 600),
+            peer_screen=(0, 0),
+        )
+        app.platform = mock.Mock()
+        app.platform.screen_size.return_value = (800, 600)
+        app._stop = threading.Event()
+        app._reconnect = threading.Event()
+        app._paused = False
+        app._lock = threading.Lock()
+        app.connected = False
+        app.role = "listener"
+        app._drop_link = mock.Mock()
+        app._log = mock.Mock()
+        app._debug = mock.Mock()
+        return app
+
+    @staticmethod
+    def _can_connect(port):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                return True
+        except OSError:
+            return False
+
+    def test_disconnect_stops_listener_accepting_peers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", 0))
+                port = int(probe.getsockname()[1])
+
+            app = self._app(directory, port)
+            thread = threading.Thread(target=app._network_loop, daemon=True)
+            thread.start()
+            try:
+                deadline = time.monotonic() + 2
+                while not self._can_connect(port) and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue(self._can_connect(port), "listener never started")
+
+                app.disconnect()
+
+                deadline = time.monotonic() + 2
+                while self._can_connect(port) and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertFalse(self._can_connect(port), "listener stayed open after disconnect")
+                self.assertTrue(app._paused)
+            finally:
+                app._stop.set()
+                app._reconnect.set()
+                thread.join(timeout=2)
 
 
 class CryptoTests(unittest.TestCase):

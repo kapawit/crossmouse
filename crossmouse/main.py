@@ -329,7 +329,9 @@ class App:
                     self.config.secret,
                     self.platform.screen_size(),
                     self._on_link,
-                    should_stop=lambda: self._stop.is_set() or self._reconnect.is_set(),
+                    should_stop=lambda: (
+                        self._stop.is_set() or self._reconnect.is_set() or self._paused
+                    ),
                 )
 
     def _wait(self, seconds: float) -> None:
