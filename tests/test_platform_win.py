@@ -3,7 +3,9 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as wintypes
 import importlib
+import queue
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -77,6 +79,38 @@ def capture_mouse_hook():
     return module, platform, sink, procs[module.WH_MOUSE_LL], next_calls
 
 
+def capture_mouse_hook_with_loop():
+    """Capture the hook with a message loop that can be stepped from the test."""
+    dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
+    procs = {}
+    set_cursor_calls = []
+    messages = queue.Queue()
+
+    def set_hook(hook_id, proc, module, thread):
+        procs[hook_id] = proc
+        return 1
+
+    def set_cursor(x, y):
+        set_cursor_calls.append((x, y))
+        return 1
+
+    def get_message(msg, hwnd, min_msg, max_msg):
+        return messages.get(timeout=2)
+
+    dlls["user32"]._funcs["SetWindowsHookExW"] = set_hook
+    dlls["user32"]._funcs["CallNextHookEx"] = lambda *args: 0
+    dlls["user32"]._funcs["SetCursorPos"] = set_cursor
+    dlls["user32"]._funcs["GetMessageW"] = get_message
+
+    module = import_platform_win(dlls)
+    platform = module.WindowsPlatform()
+    platform.start_capture(lambda event: platform.set_pointer(640, 360))
+    deadline = time.monotonic() + 2
+    while module.WH_MOUSE_LL not in procs and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return module, platform, procs[module.WH_MOUSE_LL], set_cursor_calls, messages
+
+
 class WindowsMouseHookTests(unittest.TestCase):
     def test_mouse_move_still_reaches_the_system_while_suppressed(self):
         module, platform, _, mouse_proc, next_calls = capture_mouse_hook()
@@ -88,6 +122,24 @@ class WindowsMouseHookTests(unittest.TestCase):
 
         self.assertEqual(len(next_calls), 1)
         self.assertEqual(result, 0)
+
+    def test_pointer_warp_waits_until_after_hook_processing(self):
+        module, platform, mouse_proc, set_cursor_calls, messages = capture_mouse_hook_with_loop()
+        info = module.MSLLHOOKSTRUCT()
+        info.pt.x, info.pt.y = 100, 200
+        try:
+            mouse_proc(module.HC_ACTION, module.WM_MOUSEMOVE, ctypes.byref(info))
+
+            self.assertEqual(set_cursor_calls, [])
+
+            messages.put(1)
+            deadline = time.monotonic() + 2
+            while not set_cursor_calls and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(set_cursor_calls, [(640, 360)])
+        finally:
+            messages.put(0)
+            platform._thread.join(timeout=2)
 
     def test_own_pointer_warp_is_not_forwarded_as_user_movement(self):
         module, platform, sink, mouse_proc, _ = capture_mouse_hook()

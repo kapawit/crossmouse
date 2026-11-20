@@ -153,6 +153,7 @@ class WindowsPlatform(Platform):
         self._suppress = False
         self._pointer_hidden = False
         self._warp_targets: deque[tuple[int, int, float]] = deque()
+        self._pending_warps: deque[tuple[int, int]] = deque()
 
     def set_suppress(self, value: bool) -> None:
         self._suppress = value
@@ -181,7 +182,14 @@ class WindowsPlatform(Platform):
     def set_pointer(self, x: int, y: int) -> None:
         x, y = int(x), int(y)
         self._warp_targets.append((x, y, time.monotonic()))
-        user32.SetCursorPos(x, y)
+        self._pending_warps.append((x, y))
+        if not self._thread or not self._thread.is_alive():
+            self._apply_pending_warps()
+
+    def _apply_pending_warps(self) -> None:
+        while self._pending_warps:
+            x, y = self._pending_warps.popleft()
+            user32.SetCursorPos(x, y)
 
     def _is_own_warp(self, x: int, y: int) -> bool:
         now = time.monotonic()
@@ -265,6 +273,10 @@ class WindowsPlatform(Platform):
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
+            # The hook has returned by now, so the original mouse event has
+            # been applied. Warping here sticks; warping inside the hook is
+            # undone when the system processes that event.
+            self._apply_pending_warps()
 
     def stop_capture(self) -> None:
         for hook in self._hooks:
