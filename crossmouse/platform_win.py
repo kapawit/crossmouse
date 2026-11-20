@@ -109,7 +109,35 @@ class MSG(ctypes.Structure):
     ]
 
 
-HOOKPROC = ctypes.WINFUNCTYPE(wintypes.LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+# LRESULT is LONG_PTR; ctypes.wintypes does not define it.
+LRESULT = ctypes.c_ssize_t
+HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+
+# ctypes defaults to 32-bit int for undeclared arguments and results. On 64-bit
+# Windows that truncates HMODULE/HHOOK handles and LRESULT values.
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+
+user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+user32.GetSystemMetrics.restype = ctypes.c_int
+user32.GetCursorPos.argtypes = [ctypes.POINTER(POINT)]
+user32.GetCursorPos.restype = wintypes.BOOL
+user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+user32.SetCursorPos.restype = wintypes.BOOL
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HMODULE, wintypes.DWORD]
+user32.SetWindowsHookExW.restype = wintypes.HHOOK
+user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+user32.CallNextHookEx.restype = LRESULT
+user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+user32.GetMessageW.argtypes = [ctypes.POINTER(MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+user32.GetMessageW.restype = wintypes.BOOL
+user32.TranslateMessage.argtypes = [ctypes.POINTER(MSG)]
+user32.TranslateMessage.restype = wintypes.BOOL
+user32.DispatchMessageW.argtypes = [ctypes.POINTER(MSG)]
+user32.DispatchMessageW.restype = LRESULT
+user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+user32.SendInput.restype = wintypes.UINT
 
 
 class WindowsPlatform(Platform):
