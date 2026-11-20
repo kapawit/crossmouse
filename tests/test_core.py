@@ -29,10 +29,16 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(c.port, 52800)
         self.assertEqual(c.edge, "right")
         self.assertFalse(c.debug)
+        self.assertFalse(c.auto_start)
 
     def test_debug_round_trip(self):
         c = Config.from_dict({"secret": "s", "debug": True})
         self.assertTrue(c.to_dict()["debug"])
+
+    def test_auto_start_round_trip(self):
+        c = Config.from_dict({"secret": "s", "auto_start": True})
+        self.assertTrue(c.auto_start)
+        self.assertTrue(c.to_dict()["auto_start"])
 
     def test_rejects_bad_edge(self):
         with self.assertRaises(ValueError):
@@ -84,7 +90,6 @@ class AppStatusTests(unittest.TestCase):
         app = App.__new__(App)
         app.connected = False
         app._paused = False
-        app._last_error = None
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
@@ -101,7 +106,6 @@ class AppStatusTests(unittest.TestCase):
         app = App.__new__(App)
         app.connected = False
         app._paused = False
-        app._last_error = None
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s", "debug": True})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
@@ -122,7 +126,6 @@ class AppStatusTests(unittest.TestCase):
         app.config = Config.from_dict({"secret": "s", "peer_ip": "192.168.1.5"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
         app._ui_port = 7788
-        app._last_error = None
 
         with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
             status = app.status()
@@ -131,30 +134,12 @@ class AppStatusTests(unittest.TestCase):
         self.assertFalse(status["paused"])
         self.assertTrue(status["connecting"])
 
-    def test_status_exposes_last_connect_error(self):
-        from crossmouse.main import App
-
-        app = App.__new__(App)
-        app.connected = False
-        app._paused = True
-        app.role = "controller"
-        app.config = Config.from_dict({"secret": "s", "peer_ip": "192.168.1.5"})
-        app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
-        app._ui_port = 7788
-        app._last_error = "Connection refused"
-
-        with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
-            status = app.status()
-
-        self.assertEqual(status["last_error"], "Connection refused")
-
     def test_status_reports_listener_as_not_connecting(self):
         from crossmouse.main import App
 
         app = App.__new__(App)
         app.connected = False
         app._paused = False
-        app._last_error = None
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
@@ -174,11 +159,56 @@ class AppDebugTests(unittest.TestCase):
         app.config_path = Path(directory) / "config.json"
         app.config = Config.from_dict({"secret": "s"})
         app.config_path.write_text(json.dumps(app.config.to_dict()))
-        app.engine = SimpleNamespace(config=app.config)
+        app.engine = SimpleNamespace(config=app.config, link=None, detach=mock.Mock())
         app._reconnect = mock.Mock()
         app._debug_logger = None
         app._log = mock.Mock()
+        app._lock = threading.Lock()
+        app.connected = False
+        app._paused = True
         return app
+
+    def _startup_status(self, directory: str, extra: dict) -> dict:
+        from crossmouse.main import App
+
+        config_path = Path(directory) / "config.json"
+        config_path.write_text(json.dumps({"secret": "s", **extra}))
+        platform = mock.Mock()
+        platform.screen_size.return_value = (800, 600)
+        engine = SimpleNamespace(
+            config=None,
+            mode="idle",
+            local_screen=(800, 600),
+            peer_screen=(0, 0),
+            local_event=mock.Mock(),
+            debug_snapshot=mock.Mock(),
+            link=None,
+            attach=mock.Mock(),
+            detach=mock.Mock(),
+        )
+        with (
+            mock.patch("crossmouse.main.make_platform", return_value=platform),
+            mock.patch("crossmouse.main.make_clipboard", return_value=mock.Mock()),
+            mock.patch("crossmouse.main.Engine", return_value=engine),
+            mock.patch("crossmouse.main.local_ip_address", return_value="127.0.0.1"),
+        ):
+            app = App(config_path, enable_ui=False, open_browser=False)
+        return app.status()
+
+    def test_startup_is_manual_when_auto_start_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status = self._startup_status(directory, {"peer_ip": "1.2.3.4"})
+
+        self.assertTrue(status["paused"])
+        self.assertFalse(status["connected"])
+        self.assertFalse(status["connecting"])
+
+    def test_startup_connects_when_auto_start_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status = self._startup_status(directory, {"peer_ip": "1.2.3.4", "auto_start": True})
+
+        self.assertFalse(status["paused"])
+        self.assertTrue(status["connecting"])
 
     def test_set_debug_persists_without_reconnect(self):
         import tempfile
@@ -367,7 +397,6 @@ class AppDebugTests(unittest.TestCase):
             app._paused = False
             app.connected = False
             app.role = "controller"
-            app._last_error = None
             app._ui_port = 7788
             app._wait = mock.Mock()
             logger = mock.Mock()
@@ -392,7 +421,6 @@ class AppDebugTests(unittest.TestCase):
             self.assertTrue(status["paused"])
             self.assertFalse(status["connected"])
             self.assertFalse(status["connecting"])
-            self.assertIn("actively refused", status["last_error"])
             self.assertTrue(
                 any("Connection refused" in str(c) for c in logger.log.call_args_list)
             )
@@ -404,13 +432,11 @@ class AppDebugTests(unittest.TestCase):
             app._drop_link = mock.Mock()
             app.connected = True
             app._paused = False
-            app._last_error = "Connection refused"
 
             app.disconnect()
 
             self.assertFalse(app.connected)
             self.assertTrue(app._paused)
-            self.assertIsNone(app._last_error)
 
     def test_connect_pressed_during_refused_attempt_is_not_lost(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -430,7 +456,6 @@ class AppDebugTests(unittest.TestCase):
             app._paused = False
             app.connected = False
             app.role = "controller"
-            app._last_error = None
             app._wait = mock.Mock()
 
             attempts = []
@@ -455,6 +480,46 @@ class AppDebugTests(unittest.TestCase):
                     app._network_loop()
 
             self.assertEqual(len(attempts), 2)
+
+    def test_peer_disconnect_returns_to_manual_when_auto_start_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.connected = True
+            app._paused = False
+            app.engine.attach = mock.Mock()
+            app.engine.detach = mock.Mock()
+            link = mock.Mock()
+            link.peer_screen = (1920, 1080)
+
+            with mock.patch("crossmouse.main.pump_link"):
+                app._on_link(link)
+
+            self.assertFalse(app.connected)
+            self.assertTrue(app._paused)
+
+    def test_save_config_stays_manual_when_auto_start_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.connected = True
+            app._paused = False
+            app.engine.link = mock.Mock()
+
+            app.save_config({"peer_ip": "1.2.3.4"})
+
+            self.assertFalse(app.connected)
+            self.assertTrue(app._paused)
+            app.engine.link.close.assert_called_once_with()
+            app._reconnect.set.assert_not_called()
+
+    def test_save_config_starts_when_auto_start_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+
+            app.save_config({"auto_start": True})
+
+            self.assertTrue(app.config.auto_start)
+            self.assertFalse(app._paused)
+            app._reconnect.set.assert_called_once_with()
 
 
 class CryptoTests(unittest.TestCase):

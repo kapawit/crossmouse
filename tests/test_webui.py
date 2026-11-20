@@ -98,6 +98,15 @@ class WebUIConnectionToggleTests(unittest.TestCase):
 
         self.assertRegex(html, r"state\.connected\s*=\s*!!s\.connected")
         self.assertNotIn("state.active = !s.paused", html)
+        self.assertNotIn("press Connect to retry", html)
+        self.assertNotIn("state.last_error", html)
+
+    def test_settings_expose_auto_start_option(self):
+        html = (Path(__file__).parents[1] / "crossmouse" / "ui" / "index.html").read_text()
+
+        self.assertIn('data-field="auto_start"', html)
+        self.assertIn("Turn on at startup", html)
+        self.assertIn('data-act="save">Save</button>', html)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ class Config:
     clipboard: bool = True
     primary: bool = True
     debug: bool = False
+    auto_start: bool = False
 
     def __post_init__(self) -> None:
         if not self.secret:
@@ -35,6 +36,7 @@ class Config:
             clipboard=bool(data.get("clipboard", True)),
             primary=bool(data.get("primary", True)),
             debug=bool(data.get("debug", False)),
+            auto_start=bool(data.get("auto_start", False)),
         )
 
     @classmethod

@@ -267,13 +267,12 @@ const state = {
   connected: false,
   connecting: false,
   paused: true,
-  last_error: '',
   mode: 'idle',
   role: 'listener',
   local_ip: '',
   local_screen: [],
   peer_screen: [],
-  cfg: { peer_ip: null, port: 52800, edge: 'right', secret: '', clipboard: true, primary: true, debug: false },
+  cfg: { peer_ip: null, port: 52800, edge: 'right', secret: '', clipboard: true, primary: true, debug: false, auto_start: false },
   log: [],
   view: 'status',
   tab: 'config',
@@ -299,9 +298,7 @@ function modeName() {
 
 function linkText() {
   if (state.connected) return 'Connected to peer';
-  if (state.paused) {
-    return state.last_error ? esc(state.last_error) + ' — press Connect to retry' : 'Not connected';
-  }
+  if (state.paused) return 'Not connected';
   if (state.role === 'listener') return 'Listening on ' + esc(state.local_ip) + ':' + port();
   if (state.connecting) return 'Connecting to peer';
   return 'Not connected';
@@ -380,8 +377,9 @@ function configHtml() {
       '<button type="button" class="mini-btn" data-act="copy-secret">Copy</button></div></label>' +
     '<label class="check"><input type="checkbox" data-field="clipboard"' + (c.clipboard ? ' checked' : '') + '> Sync clipboard (plain text)</label>' +
     '<label class="check"><input type="checkbox" data-field="primary"' + (c.primary ? ' checked' : '') + '> Physical mouse on this machine</label>' +
+    '<label class="check"><input type="checkbox" data-field="auto_start"' + (c.auto_start ? ' checked' : '') + '> Turn on at startup</label>' +
     '<label class="check"><input type="checkbox" data-field="debug"' + (c.debug ? ' checked' : '') + '> Debug logging (writes debug.log)</label>' +
-    '<button type="button" class="primary" data-act="save">Save &amp; reconnect</button>' +
+    '<button type="button" class="primary" data-act="save">Save</button>' +
     '<div class="saved">' + esc(state.saveMessage) + '</div>' +
     '</div>';
 }
@@ -400,12 +398,12 @@ function settingsHtml() {
 function signature() {
   return JSON.stringify({
     connected: state.connected, connecting: state.connecting, paused: state.paused,
-    last_error: state.last_error, mode: state.mode, role: state.role,
+    mode: state.mode, role: state.role,
     local_ip: state.local_ip, local_screen: state.local_screen, peer_screen: state.peer_screen,
     view: state.view, tab: state.tab, secretVisible: state.secretVisible,
     saveMessage: state.saveMessage,
-    cfg: state.role === 'listener' ? [state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary, state.cfg.debug] :
-      [state.cfg.peer_ip, state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary, state.cfg.debug]
+    cfg: state.role === 'listener' ? [state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary, state.cfg.debug, state.cfg.auto_start] :
+      [state.cfg.peer_ip, state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary, state.cfg.debug, state.cfg.auto_start]
   });
 }
 
@@ -436,7 +434,6 @@ async function refresh() {
     state.connected = !!s.connected;
     state.connecting = !!s.connecting;
     state.paused = !!s.paused;
-    state.last_error = s.last_error || '';
     state.mode = s.mode || 'idle';
     state.local_ip = s.local_ip || '';
     state.local_screen = s.local_screen || [];
@@ -463,7 +460,8 @@ async function loadConfig() {
       secret: c.secret || '',
       clipboard: c.clipboard !== false,
       primary: c.primary !== false,
-      debug: c.debug === true
+      debug: c.debug === true,
+      auto_start: c.auto_start === true
     };
     state.role = c.peer_ip ? 'controller' : 'listener';
     render();
@@ -494,7 +492,8 @@ async function saveConfig() {
     edge: state.cfg.edge,
     secret: state.cfg.secret,
     clipboard: !!state.cfg.clipboard,
-    primary: !!state.cfg.primary
+    primary: !!state.cfg.primary,
+    auto_start: !!state.cfg.auto_start
   };
   try {
     const r = await fetch('/api/config', {
@@ -503,7 +502,7 @@ async function saveConfig() {
       body: JSON.stringify(cfg)
     });
     const j = await r.json();
-    state.saveMessage = j.ok ? 'Saved. Reconnecting…' : 'Save failed';
+    state.saveMessage = j.ok ? 'Saved.' : 'Save failed';
   } catch (e) {
     state.saveMessage = 'Save failed';
   }

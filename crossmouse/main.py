@@ -94,10 +94,9 @@ class App:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._reconnect = threading.Event()
-        self._paused = False
+        self._paused = not self.config.auto_start
         self._worker: threading.Thread | None = None
         self.connected = False
-        self._last_error: str | None = None
         self.role = "listener"
         self.enable_ui = enable_ui
         self.ui = None
@@ -140,6 +139,7 @@ class App:
             f"clipboard={config.clipboard} "
             f"primary={config.primary} "
             f"debug={config.debug} "
+            f"auto_start={config.auto_start} "
             "secret=<masked>"
         )
 
@@ -173,7 +173,6 @@ class App:
             "connected": self.connected,
             "paused": self._paused,
             "connecting": not self._paused and not self.connected and bool(self.config.peer_ip),
-            "last_error": self._last_error,
             "mode": self.engine.mode,
             "role": self.role,
             "peer_ip": self.config.peer_ip,
@@ -202,14 +201,18 @@ class App:
         self.config = new
         self.engine.config = new
         self._log("Configuration saved")
-        self._paused = False
-        self._last_error = None
-        self._reconnect.set()
+        self._paused = not new.auto_start
+        if self._paused and (self.connected or getattr(self.engine, "link", None)):
+            self._drop_link()
+            with self._lock:
+                self.connected = False
+            self._log("Disconnected")
+        else:
+            self._reconnect.set()
         return restart
 
     def reconnect(self) -> None:
         self._paused = False
-        self._last_error = None
         self._reconnect.set()
         self._debug("Reconnecting")
         self._log("Reconnecting")
@@ -222,7 +225,6 @@ class App:
 
     def disconnect(self) -> None:
         self._paused = True
-        self._last_error = None
         self._drop_link()
         with self._lock:
             self.connected = False
@@ -278,13 +280,14 @@ class App:
         self.engine.attach(link)
         with self._lock:
             self.connected = True
-            self._last_error = None
         self._debug(f"Peer connected ({link.peer_screen[0]}x{link.peer_screen[1]})")
         self._log(f"Peer connected ({link.peer_screen[0]}x{link.peer_screen[1]})")
         pump_link(self.engine, link, lambda: self._stop.is_set())
         self.engine.detach()
         with self._lock:
             self.connected = False
+        if not self.config.auto_start:
+            self._paused = True
         self._debug("Peer disconnected")
         self._log("Peer disconnected")
 
@@ -305,16 +308,13 @@ class App:
                         self.platform.screen_size(),
                     )
                 except ConnectionRefusedError as exc:
-                    retry_requested = self._reconnect.is_set()
-                    if not retry_requested:
+                    if not self._reconnect.is_set():
                         self._paused = True
-                        self._last_error = f"Connection refused: {exc}"
                     self._debug(f"Connection refused: {exc}")
                     self._log(f"Connection refused: {exc}")
                     self._wait(2)
                     continue
                 except (OSError, AuthError) as exc:
-                    self._last_error = f"Connect failed: {exc}"
                     self._debug(f"Connect failed: {exc}")
                     self._log(f"Connect failed: {exc}")
                     self._wait(2)
