@@ -87,6 +87,13 @@ class Engine:
         if self.debug_sink is not None:
             self.debug_sink(message)
 
+    def _inject(self, event: InputEvent) -> None:
+        try:
+            self.platform.inject(event)
+        except Exception as exc:
+            self._debug(f"inject failed kind={event.kind}: {exc}")
+            log.warning("inject failed: %s", exc)
+
     def debug_snapshot(self, reason: str) -> None:
         if self.debug_sink is None:
             return
@@ -120,6 +127,7 @@ class Engine:
             self.platform.set_pointer_visible(True)
             self._idle_last = None
             self.mode = "idle"
+            self._debug("pointer shown; suppression off; hidden=no")
             self._send(protocol.HANDOFF, {"from": "controlled"})
 
     def detach(self) -> None:
@@ -131,6 +139,7 @@ class Engine:
         self.mode = "idle"
         self.link = None
         self.debug_snapshot("link-detached")
+        self._debug("pointer shown; suppression off; hidden=no")
 
     def local_event(self, event: InputEvent) -> None:
         link = self.link
@@ -166,6 +175,7 @@ class Engine:
                 self._idle_last = None
                 self._send(protocol.HANDOFF, {"from": "controlled"})
                 self.mode = "idle"
+                self._debug("pointer shown; suppression off; hidden=no")
 
     def _begin_controlling(self, x: int, y: int) -> None:
         w, h = self.local_screen
@@ -180,7 +190,7 @@ class Engine:
         self._idle_last = None
         self.mode = "controlling"
         self.debug_snapshot("handoff-start")
-        self._debug("pointer grabbed; local input suppressed")
+        self._debug("pointer grabbed; local input suppressed; hidden=yes")
         self._send(protocol.HANDOFF, {"from": "controlling"})
         self._send(protocol.MOVE, {"x": self._vx, "y": self._vy})
         log.info("controlling peer")
@@ -221,7 +231,7 @@ class Engine:
         self._idle_last = None
         self.mode = "idle"
         self.debug_snapshot("handoff-end")
-        self._debug("pointer released; suppression off")
+        self._debug("pointer released; suppression off; hidden=no")
         self._send(protocol.HANDOFF, {"from": "controlled"})
         log.info("control returned locally")
 
@@ -233,6 +243,7 @@ class Engine:
                 self.platform.release_all_keys()
                 self.platform.set_pointer_visible(True)
                 self.debug_snapshot("remote-controlling")
+                self._debug("pointer shown; hidden=no")
                 log.info("peer is controlling us")
             else:
                 self.mode = "idle"
@@ -241,6 +252,7 @@ class Engine:
                 self.platform.release_all_keys()
                 self._idle_last = None
                 self.debug_snapshot("remote-resumed")
+                self._debug("pointer shown; suppression off; hidden=no")
                 log.info("peer resumed local control")
         elif self.mode == "controlled":
             if kind == protocol.MOVE:
@@ -258,17 +270,18 @@ class Engine:
                     self.platform.release_all_keys()
                     self._idle_last = None
                     self.debug_snapshot("remote-handoff-back")
+                    self._debug("pointer shown; suppression off; hidden=no")
                     self._send(protocol.HANDOFF, {"from": "controlled"})
                     self._last_remote_x, self._last_remote_y = x, y
                     return
-                self.platform.inject(InputEvent("move", x, y))
+                self._inject(InputEvent("move", x, y))
                 self._last_remote_x, self._last_remote_y = x, y
             elif kind == protocol.BUTTON:
-                self.platform.inject(InputEvent.from_dict(data))
+                self._inject(InputEvent.from_dict(data))
             elif kind == protocol.SCROLL:
-                self.platform.inject(InputEvent.from_dict(data))
+                self._inject(InputEvent.from_dict(data))
             elif kind == protocol.KEY:
-                self.platform.inject(InputEvent.from_dict(data))
+                self._inject(InputEvent.from_dict(data))
             elif kind == protocol.CLIPBOARD:
                 text = data.get("text", "")
                 self.clipboard.set_text(text)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import unittest
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from crossmouse.config import Config
@@ -19,6 +20,7 @@ class FakeApp:
     def __init__(self) -> None:
         self.config = Config.from_dict({"secret": "s"})
         self.debug_calls: list[bool] = []
+        self.debug_error: OSError | None = None
 
     def status(self) -> dict:
         return {"connected": False, "paused": False, "mode": "idle", "debug": self.config.debug}
@@ -28,6 +30,8 @@ class FakeApp:
 
     def set_debug(self, enabled: bool) -> None:
         self.debug_calls.append(enabled)
+        if self.debug_error is not None:
+            raise self.debug_error
         self.config = Config.from_dict({**self.config.to_dict(), "debug": enabled})
 
 
@@ -53,6 +57,21 @@ class WebUIDebugEndpointTests(unittest.TestCase):
 
         self.assertEqual(self.fake.debug_calls, [True])
         self.assertEqual(body, {"ok": True, "debug": True})
+
+    def test_post_api_debug_reports_persist_failure(self):
+        self.fake.debug_error = OSError("disk full")
+        request = Request(
+            self.base + "/api/debug",
+            data=json.dumps({"enabled": True}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=5)
+
+        self.assertEqual(caught.exception.code, 500)
+        self.assertEqual(json.loads(caught.exception.read()), {"error": "could not persist debug setting"})
 
 
 class WebUIPageTests(unittest.TestCase):

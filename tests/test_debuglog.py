@@ -3,8 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from crossmouse.debuglog import DebugLogger, debug_log_path
+from crossmouse.debuglog import DebugLogger, _default_preferred_path, debug_log_path
 
 
 class DebugLoggerTests(unittest.TestCase):
@@ -44,3 +45,33 @@ class DebugLogPathTests(unittest.TestCase):
             debug_log_path(Path("/proc/forbidden/debug.log")),
             Path.cwd() / "debug.log",
         )
+
+    def test_falls_back_to_temp_when_current_directory_is_unwritable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cwd = Path(directory)
+            blocked = cwd / "debug.log"
+            blocked.mkdir()
+            temp = cwd / "tmp"
+            temp.mkdir()
+            with (
+                mock.patch("crossmouse.debuglog.Path.cwd", return_value=cwd),
+                mock.patch("crossmouse.debuglog.tempfile.gettempdir", return_value=str(temp)),
+            ):
+                self.assertEqual(
+                    debug_log_path(Path("/proc/forbidden/debug.log")),
+                    temp / "debug.log",
+                )
+
+    def test_default_path_uses_deb_log_dir(self):
+        with (
+            mock.patch("crossmouse.debuglog.sys.platform", "linux"),
+            mock.patch(
+                "crossmouse.debuglog.__file__",
+                "/usr/lib/crossmouse/crossmouse/debuglog.py",
+            ),
+        ):
+            self.assertEqual(_default_preferred_path(), Path("/var/log/crossmouse/debug.log"))
+
+    def test_default_path_uses_app_dir_for_source(self):
+        expected = Path(__file__).resolve().parent.parent / "debug.log"
+        self.assertEqual(_default_preferred_path(), expected)

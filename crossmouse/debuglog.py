@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -19,14 +22,22 @@ def _default_preferred_path() -> Path:
 
 
 def debug_log_path(preferred: Path | None = None) -> Path:
-    target = preferred if preferred is not None else _default_preferred_path()
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("a", encoding="utf-8"):
-            pass
-        return target
-    except OSError:
-        return Path.cwd() / LOG_NAME
+    candidates = [preferred if preferred is not None else _default_preferred_path()]
+    cwd_candidate = Path.cwd() / LOG_NAME
+    if cwd_candidate != candidates[0]:
+        candidates.append(cwd_candidate)
+    temp_candidate = Path(tempfile.gettempdir()) / LOG_NAME
+    if temp_candidate not in candidates:
+        candidates.append(temp_candidate)
+    for candidate in candidates:
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            with candidate.open("a", encoding="utf-8"):
+                pass
+            return candidate
+        except OSError:
+            continue
+    return Path(os.devnull)
 
 
 class DebugLogger:
@@ -34,16 +45,19 @@ class DebugLogger:
         self._path = path
         self._file = path.open("a", encoding="utf-8", buffering=1)
         self._closed = False
+        self._lock = threading.Lock()
 
     def log(self, message: str) -> None:
-        if self._closed:
-            return
-        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        self._file.write(f"{stamp} {message}\n")
-        self._file.flush()
+        with self._lock:
+            if self._closed:
+                return
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            self._file.write(f"{stamp} {message}\n")
+            self._file.flush()
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._file.close()
-        self._closed = True
+        with self._lock:
+            if self._closed:
+                return
+            self._file.close()
+            self._closed = True

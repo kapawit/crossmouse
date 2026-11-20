@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from crossmouse import protocol
 from crossmouse.clipboard import Clipboard
@@ -78,10 +79,15 @@ class FakeLink:
         self.sent.append((kind, data or {}))
 
 
-def make_engine(edge="right", peer=(1000, 800), primary=True):
+def make_engine(edge="right", peer=(1000, 800), primary=True, debug_sink=None):
     platform = FakePlatform()
     clipboard = FakeClipboard()
-    engine = Engine(Config(secret="s", edge=edge, primary=primary), platform, clipboard)
+    engine = Engine(
+        Config(secret="s", edge=edge, primary=primary),
+        platform,
+        clipboard,
+        debug_sink=debug_sink,
+    )
     link = FakeLink(peer)
     engine.attach(link)
     return engine, platform, clipboard, link
@@ -246,6 +252,29 @@ class EngineDebugTests(unittest.TestCase):
             )
         )
         self.assertFalse(any(secret in line for line in lines))
+
+    def test_transition_lines_include_hidden_state(self):
+        lines: list[str] = []
+        engine, _, _, _ = make_engine(debug_sink=lines.append)
+
+        engine.local_event(InputEvent("move", 900, 400))
+        engine.local_event(InputEvent("move", 999, 400))
+        engine.detach()
+
+        self.assertTrue(any("hidden=yes" in line for line in lines))
+        self.assertTrue(any("hidden=no" in line for line in lines))
+
+    def test_injection_failure_is_logged_and_does_not_raise(self):
+        lines: list[str] = []
+        platform = FakePlatform()
+        platform.inject = mock.Mock(side_effect=OSError("boom"))
+        engine = Engine(Config(secret="s"), platform, FakeClipboard(), debug_sink=lines.append)
+        engine.attach(FakeLink())
+        engine.remote_message(protocol.HANDOFF, {"from": "controlling"})
+
+        engine.remote_message(protocol.MOVE, {"x": 10, "y": 20})
+
+        self.assertTrue(any("inject failed" in line for line in lines))
 
 
 class PumpLinkTests(unittest.TestCase):

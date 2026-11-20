@@ -82,7 +82,12 @@ class App:
         self.config = Config.from_file(self.config_path)
         self.platform = make_platform()
         self.clipboard = make_clipboard(self.platform)
-        self.engine = Engine(self.config, self.platform, self.clipboard, debug_sink=self._debug)
+        self.engine = Engine(
+            self.config,
+            self.platform,
+            self.clipboard,
+            debug_sink=self._debug if self.config.debug else None,
+        )
         self._debug_logger: DebugLogger | None = None
         self._last_debug_sample = 0.0
         self._lines: deque[str] = deque(maxlen=200)
@@ -100,7 +105,7 @@ class App:
         self.platform.start_capture(self.engine.local_event)
         self._log("CrossMouse started")
         if self.config.debug:
-            self._open_debug_log()
+            self._start_debug_logging()
             self._debug("Startup with debug logging enabled")
             self._debug_config_summary()
 
@@ -113,11 +118,16 @@ class App:
         if self._debug_logger is not None:
             self._debug_logger.log(message)
 
-    def _open_debug_log(self) -> None:
-        if self._debug_logger is None:
+    def _start_debug_logging(self) -> None:
+        if self._debug_logger is not None:
+            return
+        try:
             path = debug_log_path()
             self._debug_logger = DebugLogger(path)
             self._debug(f"Debug log: {path}")
+        except OSError as exc:
+            self._debug_logger = None
+            self._log(f"Debug log unavailable: {exc}")
 
     def _debug_config_summary(self) -> None:
         config = self.config
@@ -141,7 +151,8 @@ class App:
         self.config = new
         self.engine.config = new
         if enabled:
-            self._open_debug_log()
+            self._start_debug_logging()
+            self.engine.debug_sink = self._debug if self._debug_logger else None
             self._debug_config_summary()
             self._debug("Debug logging enabled")
         else:
@@ -149,6 +160,7 @@ class App:
             if self._debug_logger is not None:
                 self._debug_logger.close()
             self._debug_logger = None
+            self.engine.debug_sink = None
         self._log(f"Debug logging {'enabled' if enabled else 'disabled'}")
 
     def log_lines(self) -> list[str]:
@@ -194,6 +206,7 @@ class App:
     def reconnect(self) -> None:
         self._paused = False
         self._reconnect.set()
+        self._debug("Reconnecting")
         self._log("Reconnecting")
 
     def _drop_link(self) -> None:
@@ -205,10 +218,12 @@ class App:
     def disconnect(self) -> None:
         self._paused = True
         self._drop_link()
+        self._debug("Disconnected")
         self._log("Disconnected")
 
     def handoff(self) -> None:
         self.engine.request_handoff()
+        self._debug("Handoff requested")
         self._log("Handoff requested")
 
     def start(self) -> None:
@@ -229,7 +244,7 @@ class App:
                 ):
                     self.engine.debug_snapshot("poll")
                     self._last_debug_sample = time.monotonic()
-                time.sleep(0.1)
+                time.sleep(0.1 if self.config.debug else 0.5)
         except KeyboardInterrupt:
             pass
         finally:
@@ -255,11 +270,13 @@ class App:
         self.engine.attach(link)
         with self._lock:
             self.connected = True
+        self._debug(f"Peer connected ({link.peer_screen[0]}x{link.peer_screen[1]})")
         self._log(f"Peer connected ({link.peer_screen[0]}x{link.peer_screen[1]})")
         pump_link(self.engine, link, lambda: self._stop.is_set())
         self.engine.detach()
         with self._lock:
             self.connected = False
+        self._debug("Peer disconnected")
         self._log("Peer disconnected")
 
     def _network_loop(self) -> None:
@@ -279,12 +296,14 @@ class App:
                         self.platform.screen_size(),
                     )
                 except (OSError, AuthError) as exc:
+                    self._debug(f"Connect failed: {exc}")
                     self._log(f"Connect failed: {exc}")
                     self._wait(2)
                     continue
                 self._on_link(link)
             else:
                 self.role = "listener"
+                self._debug(f"Listening on port {self.config.port}")
                 self._log(f"Listening on port {self.config.port}")
                 serve_once(
                     self.config.port,

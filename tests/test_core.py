@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -172,6 +173,126 @@ class AppDebugTests(unittest.TestCase):
 
             self.assertTrue(json.loads(app.config_path.read_text())["debug"])
             self.assertTrue(app.config.debug)
+
+    def test_toggling_off_stops_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            log_path = Path(directory) / "debug.log"
+            with mock.patch("crossmouse.main.debug_log_path", return_value=log_path):
+                app.set_debug(True)
+            try:
+                app._debug("while-on")
+                app.set_debug(False)
+                app._debug("after-off")
+                text = log_path.read_text()
+                self.assertIn("while-on", text)
+                self.assertNotIn("after-off", text)
+            finally:
+                if app._debug_logger:
+                    app._debug_logger.close()
+
+    def test_set_debug_updates_engine_sink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            log_path = Path(directory) / "debug.log"
+            with mock.patch("crossmouse.main.debug_log_path", return_value=log_path):
+                app.set_debug(True)
+            try:
+                self.assertIsNotNone(app.engine.debug_sink)
+                app.set_debug(False)
+                self.assertIsNone(app.engine.debug_sink)
+            finally:
+                if app._debug_logger:
+                    app._debug_logger.close()
+
+    def test_set_debug_write_failure_preserves_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            original = json.loads(app.config_path.read_text())
+            with mock.patch.object(Path, "write_text", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    app.set_debug(True)
+            self.assertEqual(json.loads(app.config_path.read_text()), original)
+            self.assertFalse(app.config.debug)
+
+    def test_startup_with_persisted_debug_opens_log(self):
+        from crossmouse.main import App
+
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(json.dumps({"secret": "s", "debug": True}))
+            log_path = Path(directory) / "debug.log"
+            platform = mock.Mock()
+            platform.screen_size.return_value = (800, 600)
+            engine = SimpleNamespace(
+                config=None,
+                mode="idle",
+                local_screen=(800, 600),
+                peer_screen=(0, 0),
+                local_event=mock.Mock(),
+                debug_snapshot=mock.Mock(),
+            )
+            with (
+                mock.patch("crossmouse.main.make_platform", return_value=platform),
+                mock.patch("crossmouse.main.make_clipboard", return_value=mock.Mock()),
+                mock.patch("crossmouse.main.Engine", return_value=engine),
+                mock.patch("crossmouse.main.debug_log_path", return_value=log_path),
+            ):
+                app = App(config_path, enable_ui=False, open_browser=False)
+            try:
+                self.assertIsNotNone(app._debug_logger)
+                self.assertIn("Startup with debug logging enabled", log_path.read_text())
+            finally:
+                if app._debug_logger:
+                    app._debug_logger.close()
+
+    def test_startup_with_unavailable_debug_log_still_starts(self):
+        from crossmouse.main import App
+
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(json.dumps({"secret": "s", "debug": True}))
+            platform = mock.Mock()
+            platform.screen_size.return_value = (800, 600)
+            engine = SimpleNamespace(
+                config=None,
+                mode="idle",
+                local_screen=(800, 600),
+                peer_screen=(0, 0),
+                local_event=mock.Mock(),
+                debug_snapshot=mock.Mock(),
+            )
+            with (
+                mock.patch("crossmouse.main.make_platform", return_value=platform),
+                mock.patch("crossmouse.main.make_clipboard", return_value=mock.Mock()),
+                mock.patch("crossmouse.main.Engine", return_value=engine),
+                mock.patch("crossmouse.main.debug_log_path", side_effect=OSError("no log")),
+            ):
+                app = App(config_path, enable_ui=False, open_browser=False)
+            self.assertIsNone(app._debug_logger)
+
+    def test_connect_failure_is_written_to_debug_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.config = Config.from_dict({"secret": "s", "peer_ip": "1.2.3.4"})
+            app.engine.config = app.config
+            app.engine.link = None
+            app.engine.detach = mock.Mock()
+            app.platform = mock.Mock()
+            app.platform.screen_size.return_value = (800, 600)
+            app._drop_link = mock.Mock()
+            app._stop = threading.Event()
+            app._paused = False
+            app._wait = mock.Mock(side_effect=lambda _: app._stop.set())
+            logger = mock.Mock()
+            app._debug_logger = logger
+
+            with mock.patch("crossmouse.main.Link.connect", side_effect=OSError("no route")):
+                app._network_loop()
+
+            self.assertTrue(
+                any("Connect failed: no route" in str(c) for c in logger.log.call_args_list)
+            )
 
 
 class CryptoTests(unittest.TestCase):

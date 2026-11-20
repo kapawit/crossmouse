@@ -70,7 +70,11 @@ class WebUI:
                     result = app.app.save_config(data)
                     self._json({"ok": True, "restart_required": result})
                 elif path == "/api/debug":
-                    app.app.set_debug(bool(data.get("enabled")))
+                    try:
+                        app.app.set_debug(bool(data.get("enabled")))
+                    except (OSError, ValueError):
+                        self._json({"error": "could not persist debug setting"}, 500)
+                        return
                     self._json({"ok": True, "debug": bool(app.app.config.debug)})
                 elif path == "/api/action":
                     action = data.get("action")

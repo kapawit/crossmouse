@@ -237,3 +237,32 @@ git add packaging/build-deb.sh packaging/CrossMouse.spec README.md dist/CrossMou
 git commit -m "build: ship debug logging in both installers"
 git push origin main
 ```
+
+### Task 6: Final review remediation
+
+**Files:**
+- Modify: `crossmouse/debuglog.py`
+- Modify: `crossmouse/main.py`
+- Modify: `crossmouse/engine.py`
+- Modify: `crossmouse/webui.py`
+- Modify: `packaging/build-deb.sh`
+- Modify: `.gitignore`
+- Modify: `tests/test_debuglog.py`, `tests/test_core.py`, `tests/test_engine.py`, `tests/test_webui.py`
+- Rebuild: `dist/CrossMouse.exe`, `dist/crossmouse_0.1.0_amd64.deb`
+
+**Interfaces:**
+- Consumes: final review findings.
+- Produces: thread-safe logger, non-fatal log unavailability, complete link/injection diagnostics, regression tests.
+
+- [x] **Step 1: Add failing tests for review-focus gaps**
+- [x] **Step 2: Run tests to verify RED**
+- [x] **Step 3: Harden logger lifecycle and config persistence**
+- [x] **Step 4: Add missing link/injection diagnostics and trim debug-off work**
+- [x] **Step 5: Run tests and JS check, then rebuild both artifacts**
+- [x] **Step 6: Verify artifacts, commit, and push**
+
+```bash
+git add -f .gitignore crossmouse/debuglog.py crossmouse/main.py crossmouse/engine.py crossmouse/webui.py packaging/build-deb.sh tests/test_debuglog.py tests/test_core.py tests/test_engine.py tests/test_webui.py docs/superpowers/plans/2026-11-20-debug-logging.md dist/CrossMouse.exe dist/crossmouse_0.1.0_amd64.deb
+git commit -m "fix: harden debug logging lifecycle and diagnostics"
+git push origin main
+```
