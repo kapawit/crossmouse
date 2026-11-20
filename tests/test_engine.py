@@ -74,10 +74,10 @@ class FakeLink:
         self.sent.append((kind, data or {}))
 
 
-def make_engine(edge="right", peer=(1000, 800)):
+def make_engine(edge="right", peer=(1000, 800), primary=True):
     platform = FakePlatform()
     clipboard = FakeClipboard()
-    engine = Engine(Config(secret="s", edge=edge), platform, clipboard)
+    engine = Engine(Config(secret="s", edge=edge, primary=primary), platform, clipboard)
     link = FakeLink(peer)
     engine.attach(link)
     return engine, platform, clipboard, link
@@ -127,6 +127,21 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(moves)
         self.assertEqual(moves[-1]["x"], 10)
         self.assertEqual(moves[-1]["y"], 410)
+
+    def test_non_owner_never_initiates_handoff(self):
+        engine, platform, _, link = make_engine(primary=False)
+        engine.local_event(InputEvent("move", 999, 400))
+        engine.request_handoff()
+        self.assertEqual(engine.mode, "idle")
+        self.assertFalse(platform.grabbed)
+        self.assertNotIn((protocol.HANDOFF, {"from": "controlling"}), link.sent)
+
+    def test_non_owner_still_accepts_remote_control(self):
+        engine, platform, _, _ = make_engine(primary=False)
+        engine.remote_message(protocol.HANDOFF, {"from": "controlling"})
+        engine.remote_message(protocol.MOVE, {"x": 10, "y": 20})
+        self.assertEqual(engine.mode, "controlled")
+        self.assertEqual(platform.moves[-1], (10, 20))
 
     def test_inward_motion_at_edge_does_not_handoff(self):
         engine, _, _, link = make_engine()

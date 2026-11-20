@@ -14,6 +14,7 @@ class Config:
     port: int = 52800
     edge: str = "right"
     clipboard: bool = True
+    primary: bool = True
 
     def __post_init__(self) -> None:
         if not self.secret:
@@ -31,6 +32,7 @@ class Config:
             port=int(data.get("port", 52800)),
             edge=data.get("edge", "right"),
             clipboard=bool(data.get("clipboard", True)),
+            primary=bool(data.get("primary", True)),
         )
 
     @classmethod

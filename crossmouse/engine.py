@@ -86,7 +86,7 @@ class Engine:
         log.info("peer attached, screen %s", self.peer_screen)
 
     def request_handoff(self) -> None:
-        if self.link is None:
+        if self.link is None or not self.config.primary:
             return
         if self.mode == "idle":
             self._begin_controlling(*self.platform.pointer_position())
@@ -106,7 +106,7 @@ class Engine:
 
     def local_event(self, event: InputEvent) -> None:
         link = self.link
-        if link is None:
+        if link is None or not self.config.primary:
             return
         if self.mode == "idle":
             if event.kind == "move":

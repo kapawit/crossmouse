@@ -63,6 +63,7 @@
     <label for="secret">Shared secret</label>
     <input id="secret" type="password" />
     <div class="checks"><input id="clipboard" type="checkbox" /><label for="clipboard" style="margin:0">Sync clipboard (plain text)</label></div>
+    <div class="checks"><input id="primary" type="checkbox" /><label for="primary" style="margin:0">Physical mouse is plugged into this machine (only this peer can hand off)</label></div>
     <div class="btns">
       <button class="primary" id="save">Save &amp; reconnect</button>
       <button id="connect">Reconnect</button>
@@ -107,6 +108,7 @@ async function loadConfig() {
   const c = await fetch('/api/config').then(r => r.json());
   ['peer_ip','port','edge','secret'].forEach(k => $(k).value = c[k] ?? '');
   $('clipboard').checked = !!c.clipboard;
+  $('primary').checked = c.primary !== false;
 }
 
 async function action(name, body) {
@@ -120,7 +122,8 @@ $('save').onclick = async () => {
     port: Number($('port').value),
     edge: $('edge').value,
     secret: $('secret').value,
-    clipboard: $('clipboard').checked
+    clipboard: $('clipboard').checked,
+    primary: $('primary').checked
   };
   const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg)});
   const j = await r.json();

@@ -23,8 +23,9 @@ The app creates `~/.config/crossmouse/config.json` on first run with a random se
 - `port` — must match on both peers (default `52800`).
 - `edge` — the side of *this* machine's screen that faces the peer: `left`, `right`, `top`, or `bottom`. Set the two machines to opposite edges.
 - `clipboard` — enable plain-text clipboard sync.
+- `primary` — set `true` on the machine that has the physical mouse plugged in. Only that peer can initiate a handoff; the other peer must set `false` and only receives input. Defaults to `true`.
 
-Example: machine A has `peer_ip` set and `edge: "right"`; machine B omits `peer_ip` and uses `edge: "left"`.
+Example: machine A has `peer_ip` set, `edge: "right"`, and `primary: true`; machine B omits `peer_ip` and uses `edge: "left"`, `primary: false`.
 
 ## Run
 

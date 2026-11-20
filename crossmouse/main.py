@@ -101,6 +101,7 @@ class App:
             "port": self.config.port,
             "edge": self.config.edge,
             "clipboard": self.config.clipboard,
+            "primary": self.config.primary,
             "local_screen": list(self.engine.local_screen),
             "peer_screen": list(self.engine.peer_screen),
             "ui_port": self._ui_port,
@@ -109,7 +110,7 @@ class App:
     def save_config(self, data: dict) -> bool:
         restart = False
         current = self.config.to_dict()
-        for key in ("secret", "peer_ip", "port", "edge", "clipboard"):
+        for key in ("secret", "peer_ip", "port", "edge", "clipboard", "primary"):
             if key in data and data[key] != current[key]:
                 restart = True
         try:

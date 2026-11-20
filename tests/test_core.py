@@ -15,6 +15,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(c.port, 6000)
         self.assertEqual(c.edge, "left")
         self.assertTrue(c.clipboard)
+        self.assertTrue(c.primary)
+
+    def test_primary_flag(self):
+        self.assertFalse(Config.from_dict({"secret": "s", "primary": False}).primary)
 
     def test_defaults(self):
         c = Config.from_dict({"secret": "s"})
