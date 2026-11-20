@@ -5,99 +5,418 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>CrossMouse</title>
 <style>
-  :root { color-scheme: dark; --bg:#0f141b; --panel:#171f29; --line:#263242; --text:#e6edf3; --muted:#8b9bad; --accent:#4dd4ac; --warn:#f0a35e; --bad:#f2686f; }
+  :root {
+    color-scheme: light;
+    --ink: #1b2430;
+    --muted: #6b7a8c;
+    --line: #dde4ec;
+    --panel: #ffffff;
+    --accent: #0e9f83;
+    --accent-dark: #087a65;
+    --accent-soft: #e2f6f0;
+    --shadow: 0 18px 50px rgba(27, 36, 48, .16), 0 2px 8px rgba(27, 36, 48, .08);
+  }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:18px 26px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
-  header h1 { font-size:17px; margin:0; letter-spacing:.3px; }
-  .logo { width:22px; height:22px; border:2px solid var(--accent); border-radius:6px; position:relative; }
-  .logo::after { content:""; position:absolute; width:6px; height:6px; border-radius:50%; background:var(--accent); top:6px; left:6px; }
-  main { max-width:960px; margin:0 auto; padding:24px; display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; }
-  .card.wide { grid-column:1 / -1; }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:1.2px; color:var(--muted); margin:0 0 14px; }
-  .row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); }
-  .row:last-child { border-bottom:0; }
-  .k { color:var(--muted); }
-  .v { font-variant-numeric:tabular-nums; }
-  .nav { display:flex; gap:6px; margin-bottom:14px; background:#0b1016; padding:4px; border-radius:9px; }
-  .nav button { flex:1; border:0; background:transparent; padding:8px 10px; border-radius:6px; cursor:pointer; color:var(--muted); font-weight:600; }
-  .nav button.active { background:var(--accent); color:#08130f; }
-  .pill { display:inline-flex; align-items:center; gap:7px; padding:4px 10px; border-radius:99px; font-size:12px; font-weight:600; }
-  .pill::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
-  .on { color:var(--accent); background:rgba(77,212,172,.12); }
-  .off { color:var(--bad); background:rgba(242,104,111,.12); }
-  .idle { color:var(--warn); background:rgba(240,163,94,.12); }
-  label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
-  input, select { width:100%; background:#0d131a; border:1px solid var(--line); color:var(--text); border-radius:7px; padding:9px 10px; font:inherit; }
-  input:focus, select:focus { outline:none; border-color:var(--accent); }
-  .checks { display:flex; align-items:center; gap:9px; margin-top:14px; }
-  .checks input { width:auto; }
-  .btns { display:flex; gap:9px; margin-top:18px; flex-wrap:wrap; }
-  button { border:1px solid var(--line); background:#1d2834; color:var(--text); border-radius:7px; padding:9px 14px; font:inherit; cursor:pointer; }
-  button:hover { border-color:var(--accent); }
-  button.primary { background:var(--accent); color:#08130f; border-color:var(--accent); font-weight:700; }
-  #log { height:210px; overflow:auto; background:#0b1016; border:1px solid var(--line); border-radius:7px; padding:10px 12px; font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; }
-  #log .t { color:var(--muted); }
-  .hint { color:var(--muted); font-size:12px; margin-top:8px; }
-  @media (max-width:700px) { main { grid-template-columns:1fr; } }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: linear-gradient(160deg, #f7f9fc, #e7edf5);
+    color: var(--ink);
+    font: 13px/1.5 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .win {
+    width: 430px;
+    height: 590px;
+    background: var(--panel);
+    border: 1px solid #d5dde7;
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .titlebar {
+    height: 44px;
+    flex: none;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px 0 16px;
+    background: linear-gradient(#fbfcfe, #f5f8fb);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 14px; }
+  .logo {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    display: inline-block;
+    position: relative;
+    flex: none;
+  }
+  .logo::after {
+    content: "";
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    top: 5px;
+    left: 5px;
+  }
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 8px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+  }
+  .icon-btn:hover { background: #f1f5f9; color: var(--ink); border-color: var(--line); }
+  .icon-btn.active { background: var(--accent-soft); color: var(--accent-dark); }
+  .icon-btn svg { width: 17px; height: 17px; }
+  .body { padding: 28px 26px; flex: 1; overflow: auto; }
+  .hero { text-align: center; padding: 8px 0 28px; }
+  .switch {
+    position: relative;
+    width: 226px;
+    height: 62px;
+    border: 0;
+    border-radius: 999px;
+    background: #cbd5e1;
+    color: #263446;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 650;
+    font-size: 15px;
+    letter-spacing: .1px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, .12);
+    transition: background .22s, color .22s;
+  }
+  .switch .knob {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 7px rgba(0, 0, 0, .25);
+    transition: left .22s;
+  }
+  .switch .label { position: relative; z-index: 1; padding-left: 34px; }
+  .switch.on { background: var(--accent); color: #fff; }
+  .switch.on .knob { left: calc(100% - 57px); }
+  .switch.on .label { padding-left: 0; padding-right: 34px; }
+  .rolepick {
+    display: inline-flex;
+    gap: 6px;
+    background: #f1f5f9;
+    padding: 5px;
+    border-radius: 9px;
+    margin-top: 22px;
+  }
+  .rolepick button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    padding: 7px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .rolepick button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+  .rolepick.locked { opacity: .55; }
+  .rolepick button:disabled { cursor: not-allowed; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 18px; }
+  .address-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    border: 1px dashed var(--line);
+    background: #fbfcfe;
+    border-radius: 9px;
+    padding: 12px 14px;
+  }
+  .address-strip .k { color: var(--muted); font-size: 12px; }
+  .address-strip .v { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .status { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+  .status .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--line);
+  }
+  .status .row:last-child { border-bottom: 0; }
+  .status .k { color: var(--muted); font-size: 12px; }
+  .status .v { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 99px;
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 650;
+    background: var(--accent-soft);
+    color: var(--accent-dark);
+  }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .sheet {
+    position: absolute;
+    inset: 44px 0 0;
+    background: #fff;
+    padding: 24px;
+    overflow: auto;
+  }
+  .shead { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .shead strong { font-size: 15px; }
+  .tabs { display: flex; gap: 6px; background: #f1f5f9; padding: 5px; border-radius: 9px; margin-bottom: 18px; }
+  .tabs button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+  .form { display: grid; gap: 14px; }
+  .form label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 600; }
+  .form input, .form select {
+    width: 100%;
+    border: 1px solid #cfd9e5;
+    background: #fff;
+    color: var(--ink);
+    border-radius: 7px;
+    padding: 10px 11px;
+    font: inherit;
+    font-size: 12px;
+  }
+  .form input:focus, .form select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .form input:disabled { background: #f4f7fa; color: #9aa8b8; }
+  .secret-row { display: flex; align-items: center; gap: 6px; }
+  .secret-row input { flex: 1; min-width: 0; font-family: ui-monospace, Consolas, monospace; }
+  .mini-btn {
+    border: 1px solid #cfd9e5;
+    background: #fff;
+    color: var(--muted);
+    border-radius: 7px;
+    padding: 8px 9px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .mini-btn:hover { border-color: var(--accent); color: var(--accent-dark); }
+  .check { display: flex !important; align-items: center; gap: 10px; }
+  .check input { width: auto; }
+  .primary {
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 8px;
+    padding: 11px 14px;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .primary:hover { background: var(--accent-dark); }
+  .saved { color: var(--accent-dark); font-size: 11px; min-height: 16px; }
+  .logbox {
+    background: #111a24;
+    color: #d8e4ef;
+    border-radius: 8px;
+    padding: 14px;
+    font: 11px/1.8 ui-monospace, Consolas, monospace;
+    height: 330px;
+    overflow: auto;
+  }
+  .logbox .t { color: #7e93a8; margin-right: 10px; }
+  @media (max-width: 480px) {
+    body { padding: 12px; }
+    .win { width: 100%; max-width: 430px; height: min(590px, calc(100vh - 24px)); }
+  }
 </style>
 </head>
 <body>
-<header><div class="logo"></div><h1>CrossMouse</h1></header>
-<main>
-  <section class="card">
-    <h2>Connection</h2>
-    <div class="row"><span class="k">Link</span><span class="v"><span id="link" class="pill off">Offline</span></span></div>
-    <div class="row"><span class="k">Role</span><span class="v" id="role">—</span></div>
-    <div class="row"><span class="k">Peer</span><span class="v" id="peer">—</span></div>
-    <div class="row"><span class="k">Control</span><span class="v"><span id="mode" class="pill idle">Local</span></span></div>
-    <div class="row"><span class="k">Screens</span><span class="v" id="screens">—</span></div>
-  </section>
-
-  <section class="card">
-    <h2>Configuration</h2>
-    <div class="nav">
-      <button type="button" data-role="listener" id="nav-listener">Listener</button>
-      <button type="button" data-role="controller" id="nav-controller">Controller</button>
-    </div>
-    <div id="peer_row">
-      <label for="peer_ip">Peer IP (controller only)</label>
-      <input id="peer_ip" placeholder="192.168.1.42" />
-    </div>
-    <label for="port">Port</label>
-    <input id="port" type="number" min="1" max="65535" />
-    <label for="edge">Edge facing peer</label>
-    <select id="edge"><option>right</option><option>left</option><option>top</option><option>bottom</option></select>
-    <label for="secret">Shared secret</label>
-    <input id="secret" type="password" />
-    <div class="checks"><input id="clipboard" type="checkbox" /><label for="clipboard" style="margin:0">Sync clipboard (plain text)</label></div>
-    <div class="checks"><input id="primary" type="checkbox" /><label for="primary" style="margin:0">Physical mouse is plugged into this machine (only this peer can hand off)</label></div>
-    <div class="btns">
-      <button class="primary" id="save">Save &amp; reconnect</button>
-      <button id="connect">Reconnect</button>
-      <button id="disconnect">Disconnect</button>
-      <button id="handoff">Hand off</button>
-    </div>
-    <div class="hint" id="cfgmsg"></div>
-  </section>
-
-  <section class="card wide">
-    <h2>Event log</h2>
-    <div id="log"></div>
-  </section>
-</main>
+<div id="app"></div>
 <script>
-const $ = id => document.getElementById(id);
-let lastLog = [];
-let currentRole = 'listener';
+const gear = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3v-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.4 7 7.2 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10.2 3V3h4v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4h-.2a1.7 1.7 0 0 0-1.6 1z"/></svg>';
+const back = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>';
 
-function setRole(role) {
-  currentRole = role;
-  for (const button of document.querySelectorAll('.nav button')) {
-    button.classList.toggle('active', button.dataset.role === role);
-  }
-  $('peer_row').style.display = role === 'controller' ? '' : 'none';
+const state = {
+  active: false,
+  connected: false,
+  mode: 'idle',
+  role: 'listener',
+  local_ip: '',
+  local_screen: [],
+  peer_screen: [],
+  cfg: { peer_ip: null, port: 52800, edge: 'right', secret: '', clipboard: true, primary: true },
+  log: [],
+  view: 'status',
+  tab: 'config',
+  saved: false,
+  secretVisible: false,
+  saveMessage: ''
+};
+let lastSignature = '';
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));
+}
+
+function port() { return esc(state.cfg.port); }
+
+function roleName() { return state.role === 'controller' ? 'Controller' : 'Listener'; }
+
+function modeName() {
+  if (state.mode === 'controlling') return 'Controlling peer';
+  if (state.mode === 'controlled') return 'Controlled';
+  return 'Local';
+}
+
+function linkText() {
+  if (state.connected) return 'Connected to peer';
+  if (!state.active) return 'Not connected';
+  if (state.role === 'listener') return 'Listening on ' + esc(state.local_ip) + ':' + port();
+  return 'Connecting to peer';
+}
+
+function switchHtml() {
+  return '<button role="switch" aria-checked="' + state.active + '" class="switch ' + (state.active ? 'on' : '') + '" data-act="toggle">' +
+    '<span class="knob"></span><span class="label">' + (state.active ? 'Disconnect' : 'Connect') + '</span></button>';
+}
+
+function roleHtml() {
+  const lock = state.active ? ' disabled title="Disconnect to change mode"' : '';
+  return '<div class="rolepick' + (state.active ? ' locked' : '') + '">' +
+    '<button type="button" data-act="role" data-role="listener" class="' + (state.role === 'listener' ? 'active' : '') + '"' + lock + '>Listener</button>' +
+    '<button type="button" data-act="role" data-role="controller" class="' + (state.role === 'controller' ? 'active' : '') + '"' + lock + '>Controller</button>' +
+    '</div>';
+}
+
+function statusRows() {
+  const address = state.role === 'listener'
+    ? '<div class="row"><span class="k">IP address</span><span class="v">' + esc(state.local_ip) + '</span></div>' +
+      '<div class="row"><span class="k">Port</span><span class="v">' + port() + '</span></div>'
+    : '';
+  const peer = state.peer_screen.some(Boolean)
+    ? esc(state.local_screen.join('×')) + ' → ' + esc(state.peer_screen.join('×'))
+    : esc(state.local_screen.join('×'));
+  return '<div class="status">' +
+    '<div class="row"><span class="k">Role</span><span class="v">' + roleName() + '</span></div>' +
+    address +
+    '<div class="row"><span class="k">Control</span><span class="v"><span class="pill">' + modeName() + '</span></span></div>' +
+    '<div class="row"><span class="k">Screens</span><span class="v">' + peer + '</span></div>' +
+    '</div>';
+}
+
+function addressStrip() {
+  if (state.role !== 'listener') return '';
+  return '<div class="address-strip"><span class="k">Listening on</span><span class="v">' +
+    esc(state.local_ip) + ':' + port() + '</span></div>';
+}
+
+function statusHtml() {
+  return '<div class="hero">' + switchHtml() + roleHtml() +
+    '<div class="sub">' + linkText() + '</div></div>' +
+    (state.connected ? statusRows() : addressStrip());
+}
+
+function logMarkup() {
+  return state.log.map(x =>
+    '<div><span class="t">' + esc(x.slice(0, 8)) + '</span>' + esc(x.slice(9)) + '</div>'
+  ).join('');
+}
+
+function logHtml() {
+  return '<div class="logbox">' + logMarkup() + '</div>';
+}
+
+function updateLog() {
+  const box = document.querySelector('.logbox');
+  if (!box) return;
+  box.innerHTML = logMarkup();
+  box.scrollTop = box.scrollHeight;
+}
+
+function configHtml() {
+  const c = state.cfg;
+  return '<div class="form">' +
+    '<label>Peer IP <input data-field="peer_ip" value="' + esc(c.peer_ip || '') + '" placeholder="192.168.1.42" ' + (state.role === 'listener' ? 'disabled' : '') + '></label>' +
+    '<label>Port <input data-field="port" type="number" min="1" max="65535" value="' + esc(c.port) + '"></label>' +
+    '<label>Edge facing peer <select data-field="edge">' +
+      ['right', 'left', 'top', 'bottom'].map(e => '<option value="' + e + '"' + (c.edge === e ? ' selected' : '') + '>' + e + '</option>').join('') +
+    '</select></label>' +
+    '<label>Shared secret <div class="secret-row">' +
+      '<input data-field="secret" type="' + (state.secretVisible ? 'text' : 'password') + '" value="' + esc(c.secret) + '">' +
+      '<button type="button" class="mini-btn" data-act="reveal">' + (state.secretVisible ? 'Hide' : 'View') + '</button>' +
+      '<button type="button" class="mini-btn" data-act="copy-secret">Copy</button></div></label>' +
+    '<label class="check"><input type="checkbox" data-field="clipboard"' + (c.clipboard ? ' checked' : '') + '> Sync clipboard (plain text)</label>' +
+    '<label class="check"><input type="checkbox" data-field="primary"' + (c.primary ? ' checked' : '') + '> Physical mouse on this machine</label>' +
+    '<button type="button" class="primary" data-act="save">Save &amp; reconnect</button>' +
+    '<div class="saved">' + esc(state.saveMessage) + '</div>' +
+    '</div>';
+}
+
+function settingsHtml() {
+  return '<div class="sheet">' +
+    '<div class="shead"><button class="icon-btn" data-act="back" title="Back">' + back + '</button><strong>Settings</strong></div>' +
+    '<div class="tabs">' +
+      '<button type="button" data-act="tab" data-tab="config" class="' + (state.tab === 'config' ? 'active' : '') + '">Configuration</button>' +
+      '<button type="button" data-act="tab" data-tab="log" class="' + (state.tab === 'log' ? 'active' : '') + '">Event log</button>' +
+    '</div>' +
+    (state.tab === 'config' ? configHtml() : logHtml()) +
+    '</div>';
+}
+
+function signature() {
+  return JSON.stringify({
+    active: state.active, connected: state.connected, mode: state.mode, role: state.role,
+    local_ip: state.local_ip, local_screen: state.local_screen, peer_screen: state.peer_screen,
+    view: state.view, tab: state.tab, secretVisible: state.secretVisible,
+    saveMessage: state.saveMessage,
+    cfg: state.role === 'listener' ? [state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary] :
+      [state.cfg.peer_ip, state.cfg.port, state.cfg.edge, state.cfg.secret, state.cfg.clipboard, state.cfg.primary]
+  });
+}
+
+function render() {
+  document.getElementById('app').innerHTML = '<div class="win">' +
+    '<div class="titlebar"><div class="brand"><span class="logo"></span>CrossMouse</div>' +
+    '<button class="icon-btn' + (state.view === 'settings' ? ' active' : '') + '" data-act="cog" title="Settings">' + gear + '</button></div>' +
+    '<div class="body">' + (state.view === 'status' ? statusHtml() : '') + '</div>' +
+    (state.view === 'settings' ? settingsHtml() : '') +
+    '</div>';
+  updateLog();
+  lastSignature = signature();
+}
+
+function renderIfChanged() {
+  const el = document.activeElement;
+  if (state.view === 'settings' && state.tab === 'config' && el && ['INPUT', 'SELECT'].includes(el.tagName)) return;
+  const sig = signature();
+  if (sig !== lastSignature) render();
 }
 
 async function refresh() {
@@ -106,57 +425,148 @@ async function refresh() {
       fetch('/api/status').then(r => r.json()),
       fetch('/api/log').then(r => r.json())
     ]);
-    const link = $('link');
-    link.textContent = s.paused ? 'Disconnected' : s.connected ? 'Connected' : 'Connecting';
-    link.className = 'pill ' + (s.connected ? 'on' : 'off');
-    $('role').textContent = s.connected ? s.role : '—';
-    $('peer').textContent = s.peer_ip || 'waiting for peer';
-    const mode = $('mode');
-    mode.textContent = s.mode === 'controlling' ? 'Controlling peer' : s.mode === 'controlled' ? 'Controlled' : 'Local';
-    mode.className = 'pill ' + (s.mode === 'idle' ? 'idle' : 'on');
-    $('screens').textContent = `${s.local_screen.join('×')}` + (s.peer_screen.some(Boolean) ? ` → ${s.peer_screen.join('×')}` : '');
-    if (JSON.stringify(l.lines) !== JSON.stringify(lastLog)) {
-      lastLog = l.lines;
-      $('log').innerHTML = l.lines.map(x => `<div><span class="t">${x.slice(0,8)}</span>${x.slice(8)}</div>`).join('');
-      $('log').scrollTop = $('log').scrollHeight;
+    state.active = !s.paused;
+    state.connected = !!s.connected;
+    state.mode = s.mode || 'idle';
+    state.local_ip = s.local_ip || '';
+    state.local_screen = s.local_screen || [];
+    state.peer_screen = s.peer_screen || [];
+    const lines = l.lines || [];
+    if (JSON.stringify(lines) !== JSON.stringify(state.log)) {
+      state.log = lines;
+      updateLog();
     }
-  } catch (e) {}
+    renderIfChanged();
+  } catch (e) {
+    // The app is still starting; the next poll will pick it up.
+  }
 }
 
 async function loadConfig() {
-  const c = await fetch('/api/config').then(r => r.json());
-  ['peer_ip','port','edge','secret'].forEach(k => $(k).value = c[k] ?? '');
-  setRole(c.peer_ip ? 'controller' : 'listener');
-  $('clipboard').checked = !!c.clipboard;
-  $('primary').checked = c.primary !== false;
+  try {
+    const c = await fetch('/api/config').then(r => r.json());
+    state.cfg = {
+      peer_ip: c.peer_ip || null,
+      port: c.port ?? 52800,
+      edge: c.edge || 'right',
+      secret: c.secret || '',
+      clipboard: c.clipboard !== false,
+      primary: c.primary !== false
+    };
+    state.role = c.peer_ip ? 'controller' : 'listener';
+    render();
+  } catch (e) {
+    render();
+  }
 }
 
-async function action(name, body) {
-  await fetch('/api/action', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:name, ...(body||{})})});
-  refresh();
+async function action(name) {
+  await fetch('/api/action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: name})
+  });
+  await refresh();
 }
 
-$('save').onclick = async () => {
+async function saveConfig() {
+  const portNumber = Number(state.cfg.port);
+  if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+    state.saveMessage = 'Port must be 1–65535';
+    render();
+    return;
+  }
   const cfg = {
-    peer_ip: currentRole === 'controller' ? ($('peer_ip').value.trim() || null) : null,
-    port: Number($('port').value),
-    edge: $('edge').value,
-    secret: $('secret').value,
-    clipboard: $('clipboard').checked,
-    primary: $('primary').checked
+    peer_ip: state.role === 'controller' ? (String(state.cfg.peer_ip || '').trim() || null) : null,
+    port: portNumber,
+    edge: state.cfg.edge,
+    secret: state.cfg.secret,
+    clipboard: !!state.cfg.clipboard,
+    primary: !!state.cfg.primary
   };
-  const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg)});
-  const j = await r.json();
-  $('cfgmsg').textContent = j.ok ? 'Saved. Reconnecting…' : 'Save failed';
-  refresh();
-};
-$('connect').onclick = () => action('connect');
-$('disconnect').onclick = () => action('disconnect');
-$('handoff').onclick = () => action('handoff');
-for (const button of document.querySelectorAll('.nav button')) {
-  button.onclick = () => setRole(button.dataset.role);
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg)
+    });
+    const j = await r.json();
+    state.saveMessage = j.ok ? 'Saved. Reconnecting…' : 'Save failed';
+  } catch (e) {
+    state.saveMessage = 'Save failed';
+  }
+  await refresh();
+  render();
 }
 
+async function copySecret(button) {
+  const text = state.cfg.secret;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    button.textContent = 'Copied';
+  } catch (e) {
+    button.textContent = 'Failed';
+  }
+  setTimeout(() => { button.textContent = 'Copy'; }, 1000);
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'toggle') {
+    await action(state.active ? 'disconnect' : 'connect');
+  } else if (act === 'cog') {
+    state.view = 'settings';
+    state.saveMessage = '';
+    render();
+  } else if (act === 'back') {
+    state.view = 'status';
+    state.saveMessage = '';
+    render();
+  } else if (act === 'tab') {
+    state.tab = b.dataset.tab;
+    render();
+  } else if (act === 'role') {
+    if (state.active) return;
+    state.role = b.dataset.role;
+    state.saveMessage = '';
+    render();
+  } else if (act === 'reveal') {
+    state.secretVisible = !state.secretVisible;
+    render();
+  } else if (act === 'copy-secret') {
+    await copySecret(b);
+  } else if (act === 'save') {
+    await saveConfig();
+  }
+});
+
+document.addEventListener('input', e => {
+  const field = e.target.dataset.field;
+  if (!field) return;
+  state.cfg[field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  state.saveMessage = '';
+});
+
+document.addEventListener('change', e => {
+  const field = e.target.dataset.field;
+  if (!field) return;
+  state.cfg[field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+});
+
+render();
 loadConfig();
 refresh();
 setInterval(refresh, 1000);

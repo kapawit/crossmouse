@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import secrets
+import socket
 import sys
 import threading
 import time
@@ -42,6 +43,18 @@ def make_platform() -> Platform:
     from .platform_linux import LinuxPlatform
 
     return LinuxPlatform()
+
+
+def local_ip_address() -> str:
+    """Return the LAN IPv4 address used to reach this machine."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("192.0.2.1", 80))
+        return str(sock.getsockname()[0])
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
 
 
 def pump_link(engine, link, should_stop) -> None:
@@ -100,6 +113,7 @@ class App:
             "mode": self.engine.mode,
             "role": self.role,
             "peer_ip": self.config.peer_ip,
+            "local_ip": local_ip_address(),
             "port": self.config.port,
             "edge": self.config.edge,
             "clipboard": self.config.clipboard,

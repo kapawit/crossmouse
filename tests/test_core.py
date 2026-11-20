@@ -3,6 +3,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from crossmouse import crypto, protocol
 from crossmouse.config import Config
@@ -50,6 +52,40 @@ class ConfigBootstrapTests(unittest.TestCase):
             first = path.read_text()
             ensure_config(path)
             self.assertEqual(path.read_text(), first)
+
+
+class LocalIpTests(unittest.TestCase):
+    def test_local_ip_uses_lan_address_from_probe_socket(self):
+        from crossmouse.main import local_ip_address
+
+        with mock.patch("crossmouse.main.socket.socket") as factory:
+            factory.return_value.getsockname.return_value = ("192.168.1.23", 43210)
+            self.assertEqual(local_ip_address(), "192.168.1.23")
+
+    def test_local_ip_falls_back_to_loopback_without_network(self):
+        from crossmouse.main import local_ip_address
+
+        with mock.patch("crossmouse.main.socket.socket") as factory:
+            factory.return_value.connect.side_effect = OSError("no network")
+            self.assertEqual(local_ip_address(), "127.0.0.1")
+
+
+class AppStatusTests(unittest.TestCase):
+    def test_status_exposes_local_ip_for_listener_address(self):
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.connected = False
+        app._paused = False
+        app.role = "listener"
+        app.config = Config.from_dict({"secret": "s"})
+        app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
+        app._ui_port = 7788
+
+        with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.23"):
+            status = app.status()
+
+        self.assertEqual(status["local_ip"], "192.168.1.23")
 
 
 class CryptoTests(unittest.TestCase):
