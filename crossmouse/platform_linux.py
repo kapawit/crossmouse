@@ -4,11 +4,34 @@ import threading
 import time
 from collections import deque
 
+import importlib
+import inspect
+import pkgutil
+
 from Xlib import X, XK, display
+from Xlib import ext as xlib_ext
 from Xlib.ext import record, xtest
 from Xlib.protocol import rq
 
 from .platform_base import EventSink, InputEvent, Platform
+
+
+def _patch_xlib_error_classes() -> None:
+    for module_info in pkgutil.iter_modules(xlib_ext.__path__):
+        try:
+            module = importlib.import_module(f"Xlib.ext.{module_info.name}")
+        except Exception:
+            continue
+        for name, obj in vars(module).items():
+            if (
+                inspect.isclass(obj)
+                and name.endswith("Error")
+                and not hasattr(obj, "sequence_number")
+            ):
+                obj.sequence_number = 0
+
+
+_patch_xlib_error_classes()
 
 _BUTTONS = {1: "left", 2: "middle", 3: "right"}
 _BUTTON_CODES = {v: k for k, v in _BUTTONS.items()}
@@ -95,6 +118,7 @@ class LinuxPlatform(Platform):
     def __init__(self, display_name: str | None = None) -> None:
         self._display_name = display_name
         self._display = display.Display(display_name)
+        self._display.display.set_error_handler(lambda error, request: True)
         self._root = self._display.screen().root
         self._record_display: display.Display | None = None
         self._sink: EventSink | None = None
@@ -104,6 +128,12 @@ class LinuxPlatform(Platform):
         self._pressed_keys: set[int] = set()
         self._warp_targets: deque[tuple[int, int, float]] = deque()
         self._pointer_hidden = False
+
+    def _flush(self) -> None:
+        try:
+            self._display.flush()
+        except Exception:
+            pass
 
     def screen_size(self) -> tuple[int, int]:
         screen = self._display.screen()
@@ -121,16 +151,13 @@ class LinuxPlatform(Platform):
                 self._root.xfixes_show_cursor()
             else:
                 self._root.xfixes_hide_cursor()
-            try:
-                self._display.flush()
-            except Exception:
-                pass
+            self._flush()
             self._pointer_hidden = not visible
 
     def set_pointer(self, x: int, y: int) -> None:
         self._warp_targets.append((int(x), int(y), time.monotonic()))
         xtest.fake_input(self._display, X.MotionNotify, x=int(x), y=int(y))
-        self._display.sync()
+        self._flush()
 
     def _is_own_warp(self, x: int, y: int) -> bool:
         now = time.monotonic()
@@ -161,7 +188,7 @@ class LinuxPlatform(Platform):
         if not self._grabbed:
             return
         self._display.ungrab_pointer(X.CurrentTime)
-        self._display.sync()
+        self._flush()
         self._grabbed = False
 
     def start_capture(self, sink: EventSink) -> None:
@@ -169,6 +196,7 @@ class LinuxPlatform(Platform):
             return
         self._sink = sink
         self._record_display = display.Display(self._display_name)
+        self._record_display.display.set_error_handler(lambda error, request: True)
         self._record_context = self._record_display.record_create_context(
             0,
             [record.AllClients],
@@ -262,10 +290,10 @@ class LinuxPlatform(Platform):
                 xtest.fake_input(
                     d, X.KeyPress if event.b else X.KeyRelease, detail=code
                 )
-        d.sync()
+        self._flush()
 
     def release_all_keys(self) -> None:
         for code in list(self._pressed_keys):
             xtest.fake_input(self._display, X.KeyRelease, detail=code)
         self._pressed_keys.clear()
-        self._display.sync()
+        self._flush()

@@ -33,7 +33,7 @@ Example: machine A has `peer_ip` set, `edge: "right"`, and `primary: true`; mach
 ./run.sh --config config.json
 ```
 
-By default a control panel opens at `http://127.0.0.1:7788/`. It shows link status, active control, and an event log, and lets you edit the config, reconnect, and request a handoff. Use `--no-ui` for headless operation, `--ui-port N` to change the port, and `--no-browser` to suppress auto-opening the browser.
+By default a control panel opens at `http://127.0.0.1:7788/`. It shows link status, active control, and an event log. The configuration card has **Listener / Controller** tabs: Controller requires the peer IP, Listener waits for an incoming connection. Buttons let you save and reconnect, reconnect, disconnect, and request a handoff. Use `--no-ui` for headless operation, `--ui-port N` to change the port, and `--no-browser` to suppress auto-opening the browser.
 
 The connector retries every two seconds; the listener accepts a single authenticated session at a time.
 

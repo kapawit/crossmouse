@@ -73,6 +73,7 @@ class App:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._reconnect = threading.Event()
+        self._paused = False
         self._worker: threading.Thread | None = None
         self.connected = False
         self.role = "listener"
@@ -95,6 +96,7 @@ class App:
     def status(self) -> dict:
         return {
             "connected": self.connected,
+            "paused": self._paused,
             "mode": self.engine.mode,
             "role": self.role,
             "peer_ip": self.config.peer_ip,
@@ -121,18 +123,24 @@ class App:
         self.config = new
         self.engine.config = new
         self._log("Configuration saved")
+        self._paused = False
         self._reconnect.set()
         return restart
 
     def reconnect(self) -> None:
+        self._paused = False
         self._reconnect.set()
         self._log("Reconnecting")
 
-    def disconnect(self) -> None:
+    def _drop_link(self) -> None:
         link = self.engine.link
         if link:
             link.close()
         self.engine.detach()
+
+    def disconnect(self) -> None:
+        self._paused = True
+        self._drop_link()
         self._log("Disconnected")
 
     def handoff(self) -> None:
@@ -182,8 +190,11 @@ class App:
 
     def _network_loop(self) -> None:
         while not self._stop.is_set():
+            if self._paused:
+                time.sleep(0.2)
+                continue
             self._reconnect.clear()
-            self.disconnect()
+            self._drop_link()
             if self.config.peer_ip:
                 self.role = "connector"
                 try:

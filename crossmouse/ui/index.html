@@ -20,6 +20,9 @@
   .row:last-child { border-bottom:0; }
   .k { color:var(--muted); }
   .v { font-variant-numeric:tabular-nums; }
+  .nav { display:flex; gap:6px; margin-bottom:14px; background:#0b1016; padding:4px; border-radius:9px; }
+  .nav button { flex:1; border:0; background:transparent; padding:8px 10px; border-radius:6px; cursor:pointer; color:var(--muted); font-weight:600; }
+  .nav button.active { background:var(--accent); color:#08130f; }
   .pill { display:inline-flex; align-items:center; gap:7px; padding:4px 10px; border-radius:99px; font-size:12px; font-weight:600; }
   .pill::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
   .on { color:var(--accent); background:rgba(77,212,172,.12); }
@@ -54,8 +57,14 @@
 
   <section class="card">
     <h2>Configuration</h2>
-    <label for="peer_ip">Peer IP (leave empty to listen)</label>
-    <input id="peer_ip" placeholder="192.168.1.42" />
+    <div class="nav">
+      <button type="button" data-role="listener" id="nav-listener">Listener</button>
+      <button type="button" data-role="controller" id="nav-controller">Controller</button>
+    </div>
+    <div id="peer_row">
+      <label for="peer_ip">Peer IP (controller only)</label>
+      <input id="peer_ip" placeholder="192.168.1.42" />
+    </div>
     <label for="port">Port</label>
     <input id="port" type="number" min="1" max="65535" />
     <label for="edge">Edge facing peer</label>
@@ -67,6 +76,7 @@
     <div class="btns">
       <button class="primary" id="save">Save &amp; reconnect</button>
       <button id="connect">Reconnect</button>
+      <button id="disconnect">Disconnect</button>
       <button id="handoff">Hand off</button>
     </div>
     <div class="hint" id="cfgmsg"></div>
@@ -80,6 +90,15 @@
 <script>
 const $ = id => document.getElementById(id);
 let lastLog = [];
+let currentRole = 'listener';
+
+function setRole(role) {
+  currentRole = role;
+  for (const button of document.querySelectorAll('.nav button')) {
+    button.classList.toggle('active', button.dataset.role === role);
+  }
+  $('peer_row').style.display = role === 'controller' ? '' : 'none';
+}
 
 async function refresh() {
   try {
@@ -88,7 +107,7 @@ async function refresh() {
       fetch('/api/log').then(r => r.json())
     ]);
     const link = $('link');
-    link.textContent = s.connected ? 'Connected' : 'Offline';
+    link.textContent = s.paused ? 'Disconnected' : s.connected ? 'Connected' : 'Connecting';
     link.className = 'pill ' + (s.connected ? 'on' : 'off');
     $('role').textContent = s.connected ? s.role : '—';
     $('peer').textContent = s.peer_ip || 'waiting for peer';
@@ -107,6 +126,7 @@ async function refresh() {
 async function loadConfig() {
   const c = await fetch('/api/config').then(r => r.json());
   ['peer_ip','port','edge','secret'].forEach(k => $(k).value = c[k] ?? '');
+  setRole(c.peer_ip ? 'controller' : 'listener');
   $('clipboard').checked = !!c.clipboard;
   $('primary').checked = c.primary !== false;
 }
@@ -118,7 +138,7 @@ async function action(name, body) {
 
 $('save').onclick = async () => {
   const cfg = {
-    peer_ip: $('peer_ip').value.trim() || null,
+    peer_ip: currentRole === 'controller' ? ($('peer_ip').value.trim() || null) : null,
     port: Number($('port').value),
     edge: $('edge').value,
     secret: $('secret').value,
@@ -131,7 +151,11 @@ $('save').onclick = async () => {
   refresh();
 };
 $('connect').onclick = () => action('connect');
+$('disconnect').onclick = () => action('disconnect');
 $('handoff').onclick = () => action('handoff');
+for (const button of document.querySelectorAll('.nav button')) {
+  button.onclick = () => setRole(button.dataset.role);
+}
 
 loadConfig();
 refresh();
