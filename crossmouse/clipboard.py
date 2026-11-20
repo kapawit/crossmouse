@@ -20,13 +20,18 @@ class Clipboard:
 
 
 class LinuxClipboard(Clipboard):
-    def __init__(self, platform: Platform, display_name: str | None = None) -> None:
+    def __init__(
+        self,
+        platform: Platform,
+        display_name: str | None = None,
+        selection_name: str = "CLIPBOARD",
+    ) -> None:
         from Xlib import X, display
         from Xlib.protocol import event, request
 
         self._x = display.Display(display_name)
-        self._root = self._x.screen().root
-        self._selection = self._x.intern_atom("CLIPBOARD")
+        self._screen = self._x.screen()
+        self._selection = self._x.intern_atom(selection_name)
         self._utf8 = self._x.intern_atom("UTF8_STRING")
         self._targets = self._x.intern_atom("TARGETS")
         self._atom_type = self._x.intern_atom("ATOM")
@@ -39,6 +44,18 @@ class LinuxClipboard(Clipboard):
         self._owner = False
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._win = self._screen.root.create_window(
+            0,
+            0,
+            1,
+            1,
+            0,
+            self._screen.root_depth,
+            X.InputOutput,
+            X.CopyFromParent,
+            override_redirect=True,
+        )
+        self._x.sync()
 
     def get_text(self) -> str:
         if self._owner:
@@ -47,34 +64,30 @@ class LinuxClipboard(Clipboard):
         owner_id = owner if isinstance(owner, int) else owner.id
         if owner_id == 0:
             return ""
-        self._root.change_attributes(event_mask=self._X.PropertyChangeMask)
+        self._win.change_attributes(event_mask=self._X.PropertyChangeMask)
         self._x.sync()
-        self._request.ConvertSelection(
-            display=self._x.display,
-            selection=self._selection,
-            target=self._utf8,
-            property=self._prop,
-            requestor=self._root,
-            time=self._X.CurrentTime,
-        )
-        self._x.sync()
-        deadline = time.monotonic() + 1.0
+        deadline = time.monotonic() + 3.0
+        next_request = 0.0
         while time.monotonic() < deadline:
-            ready, _, _ = select.select([self._x.fileno()], [], [], 0.1)
-            if not ready:
-                continue
-            ev = self._x.next_event()
-            if (
-                isinstance(ev, self._event.SelectionNotify)
-                and ev.selection == self._selection
-            ):
-                if ev.property == 0:
-                    return ""
-                prop = self._root.get_full_property(self._prop, self._utf8)
-                self._root.delete_property(self._prop)
+            prop = self._win.get_full_property(self._prop, self._utf8)
+            if prop and prop.value:
+                self._win.delete_property(self._prop)
                 self._x.sync()
-                if prop and prop.value:
-                    return bytes(prop.value).decode("utf-8", "replace")
+                return bytes(prop.value).decode("utf-8", "replace")
+            if time.monotonic() >= next_request:
+                self._request.ConvertSelection(
+                    display=self._x.display,
+                    selection=self._selection,
+                    target=self._utf8,
+                    property=self._prop,
+                    requestor=self._win,
+                    time=self._X.CurrentTime,
+                )
+                self._x.sync()
+                next_request = time.monotonic() + 0.4
+            ready, _, _ = select.select([self._x.fileno()], [], [], 0.1)
+            if ready:
+                self._x.next_event()
         return ""
 
     def set_text(self, text: str) -> None:
@@ -82,7 +95,7 @@ class LinuxClipboard(Clipboard):
         if not self._owner:
             self._request.SetSelectionOwner(
                 display=self._x.display,
-                window=self._root,
+                window=self._win,
                 selection=self._selection,
                 time=self._X.CurrentTime,
             )
@@ -133,12 +146,27 @@ class LinuxClipboard(Clipboard):
                     target=ev.target,
                     property=ev.property,
                 ),
-                event_mask=X.PropertyChangeMask,
+                event_mask=0,
             )
             self._x.sync()
 
     def close(self) -> None:
         self._stop.set()
+        if self._owner:
+            try:
+                self._request.SetSelectionOwner(
+                    display=self._x.display,
+                    window=self._X.NONE,
+                    selection=self._selection,
+                    time=self._X.CurrentTime,
+                )
+            except Exception:
+                pass
+            self._owner = False
+        try:
+            self._win.destroy()
+        except Exception:
+            pass
 
 
 class WindowsClipboard(Clipboard):

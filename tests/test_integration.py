@@ -100,10 +100,11 @@ class ClipboardIntegrationTests(unittest.TestCase):
         from crossmouse.platform_linux import LinuxPlatform
 
         platform = LinuxPlatform()
-        owner = LinuxClipboard(platform)
+        name = "CROSSMOUSE_TEST_SELECTION"
+        owner = LinuxClipboard(platform, selection_name=name)
         owner.set_text("crossmouse-test")
         self.assertEqual(owner.get_text(), "crossmouse-test")
-        reader = LinuxClipboard(platform)
+        reader = LinuxClipboard(platform, selection_name=name)
         self.assertEqual(reader.get_text(), "crossmouse-test")
         reader.set_text("from-reader")
         self.assertEqual(owner.get_text(), "from-reader")
