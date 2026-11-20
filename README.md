@@ -24,6 +24,7 @@ The app creates `~/.config/crossmouse/config.json` on first run with a random se
 - `edge` — the side of *this* machine's screen that faces the peer: `left`, `right`, `top`, or `bottom`. Set the two machines to opposite edges.
 - `clipboard` — enable plain-text clipboard sync.
 - `primary` — set `true` on the machine that has the physical mouse plugged in. Only that peer can initiate a handoff; the other peer must set `false` and only receives input. Defaults to `true`.
+- `debug` — write a live `debug.log` with pointer state, coordinates, and handoff diagnostics. Off by default.
 
 Example: machine A has `peer_ip` set, `edge: "right"`, and `primary: true`; machine B omits `peer_ip` and uses `edge: "left"`, `primary: false`.
 
@@ -36,6 +37,12 @@ Example: machine A has `peer_ip` set, `edge: "right"`, and `primary: true`; mach
 By default a control panel opens at `http://127.0.0.1:7788/`. It shows link status, active control, and an event log. The configuration card has **Listener / Controller** tabs: Controller requires the peer IP, Listener waits for an incoming connection. Buttons let you save and reconnect, reconnect, disconnect, and request a handoff. Use `--no-ui` for headless operation, `--ui-port N` to change the port, and `--no-browser` to suppress auto-opening the browser.
 
 The connector retries every two seconds; the listener accepts a single authenticated session at a time.
+
+## Debug logging
+
+Turn on **Settings → Configuration → Debug logging** to append timestamped lines to `debug.log`. The switch takes effect immediately and persists across restarts; it does not reconnect. Each line is flushed as it is written, so `tail -f debug.log` shows activity live. The shared secret is never logged.
+
+Locations: the Windows install directory (`%LOCALAPPDATA%\Programs\CrossMouse\debug.log`), `/var/log/crossmouse/debug.log` for the Linux package, the app directory when running from source or `dist/`, or the current directory if the preferred location is not writable.
 
 ## Installable packages
 

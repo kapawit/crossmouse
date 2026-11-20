@@ -17,6 +17,7 @@ a = Analysis(
         "crossmouse.protocol",
         "crossmouse.crypto",
         "crossmouse.config",
+        "crossmouse.debuglog",
         "cryptography",
     ],
     hookspath=[],

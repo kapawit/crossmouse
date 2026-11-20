@@ -195,6 +195,7 @@ git commit -m "feat: add debug toggle to settings page"
 
 **Files:**
 - Modify: `packaging/build-deb.sh`
+- Modify: `packaging/CrossMouse.spec`
 - Modify: `README.md`
 - Rebuild: `dist/CrossMouse.exe`, `dist/crossmouse_0.1.0_amd64.deb`
 
@@ -202,11 +203,11 @@ git commit -m "feat: add debug toggle to settings page"
 - Consumes: all previous tasks.
 - Produces: installers containing the debug toggle and logger.
 
-- [ ] **Step 1: Make Linux log dir writable**
+- [x] **Step 1: Make Linux log dir writable**
 
 In `packaging/build-deb.sh`, extend `postinst` to create `/var/log/crossmouse` and set writable permissions. Add a short README note describing the Settings toggle and log locations.
 
-- [ ] **Step 2: Run full tests and JS syntax check**
+- [x] **Step 2: Run full tests and JS syntax check**
 
 Run:
 ```bash
@@ -220,19 +221,19 @@ node --check /tmp/opencode/crossmouse-ui.js
 ```
 Expected: all tests pass and JS syntax check exits 0.
 
-- [ ] **Step 3: Rebuild both artifacts**
+- [x] **Step 3: Rebuild both artifacts**
 
 Windows: run PyInstaller via PowerShell from `packaging/CrossMouse.spec`.
 Linux: stage source in `/tmp/opencode/crossmouse-linux-build` (the `/mnt/d` mount forces `0777` and breaks `dpkg-deb`), run `packaging/build-deb.sh 0.1.0`, copy the `.deb` back to `dist/`, and restore/copy `dist/CrossMouse.exe`.
 
-- [ ] **Step 4: Verify artifacts**
+- [x] **Step 4: Verify artifacts**
 
 Assert the `.deb` contains `crossmouse/debuglog.py` and `data-field="debug"` in `ui/index.html`. Assert both files exist in `dist/`.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 ```bash
-git add packaging/build-deb.sh README.md dist/CrossMouse.exe dist/crossmouse_0.1.0_amd64.deb
+git add packaging/build-deb.sh packaging/CrossMouse.spec README.md dist/CrossMouse.exe dist/crossmouse_0.1.0_amd64.deb
 git commit -m "build: ship debug logging in both installers"
 git push origin main
 ```

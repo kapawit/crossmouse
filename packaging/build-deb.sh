@@ -36,6 +36,8 @@ cat > "$PKG/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
 chmod 644 /etc/crossmouse/config.json
+mkdir -p /var/log/crossmouse
+chmod 777 /var/log/crossmouse
 EOF
 chmod 755 "$PKG/DEBIAN/postinst"
 
