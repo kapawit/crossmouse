@@ -264,8 +264,10 @@ const gear = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const back = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>';
 
 const state = {
-  active: false,
   connected: false,
+  connecting: false,
+  paused: true,
+  last_error: '',
   mode: 'idle',
   role: 'listener',
   local_ip: '',
@@ -297,19 +299,23 @@ function modeName() {
 
 function linkText() {
   if (state.connected) return 'Connected to peer';
-  if (!state.active) return 'Not connected';
+  if (state.paused) {
+    return state.last_error ? esc(state.last_error) + ' — press Connect to retry' : 'Not connected';
+  }
   if (state.role === 'listener') return 'Listening on ' + esc(state.local_ip) + ':' + port();
-  return 'Connecting to peer';
+  if (state.connecting) return 'Connecting to peer';
+  return 'Not connected';
 }
 
 function switchHtml() {
-  return '<button role="switch" aria-checked="' + state.active + '" class="switch ' + (state.active ? 'on' : '') + '" data-act="toggle">' +
-    '<span class="knob"></span><span class="label">' + (state.active ? 'Disconnect' : 'Connect') + '</span></button>';
+  return '<button role="switch" aria-checked="' + state.connected + '" class="switch ' + (state.connected ? 'on' : '') + '" data-act="toggle">' +
+    '<span class="knob"></span><span class="label">' + (state.connected ? 'Disconnect' : 'Connect') + '</span></button>';
 }
 
 function roleHtml() {
-  const lock = state.active ? ' disabled title="Disconnect to change mode"' : '';
-  return '<div class="rolepick' + (state.active ? ' locked' : '') + '">' +
+  const busy = state.connected || state.connecting;
+  const lock = busy ? ' disabled title="Disconnect to change mode"' : '';
+  return '<div class="rolepick' + (busy ? ' locked' : '') + '">' +
     '<button type="button" data-act="role" data-role="listener" class="' + (state.role === 'listener' ? 'active' : '') + '"' + lock + '>Listener</button>' +
     '<button type="button" data-act="role" data-role="controller" class="' + (state.role === 'controller' ? 'active' : '') + '"' + lock + '>Controller</button>' +
     '</div>';
@@ -393,7 +399,8 @@ function settingsHtml() {
 
 function signature() {
   return JSON.stringify({
-    active: state.active, connected: state.connected, mode: state.mode, role: state.role,
+    connected: state.connected, connecting: state.connecting, paused: state.paused,
+    last_error: state.last_error, mode: state.mode, role: state.role,
     local_ip: state.local_ip, local_screen: state.local_screen, peer_screen: state.peer_screen,
     view: state.view, tab: state.tab, secretVisible: state.secretVisible,
     saveMessage: state.saveMessage,
@@ -426,8 +433,10 @@ async function refresh() {
       fetch('/api/status').then(r => r.json()),
       fetch('/api/log').then(r => r.json())
     ]);
-    state.active = !s.paused;
     state.connected = !!s.connected;
+    state.connecting = !!s.connecting;
+    state.paused = !!s.paused;
+    state.last_error = s.last_error || '';
     state.mode = s.mode || 'idle';
     state.local_ip = s.local_ip || '';
     state.local_screen = s.local_screen || [];
@@ -546,7 +555,7 @@ document.addEventListener('click', async e => {
   if (!b) return;
   const act = b.dataset.act;
   if (act === 'toggle') {
-    await action(state.active ? 'disconnect' : 'connect');
+    await action(state.connected ? 'disconnect' : 'connect');
   } else if (act === 'cog') {
     state.view = 'settings';
     state.saveMessage = '';
@@ -559,7 +568,7 @@ document.addEventListener('click', async e => {
     state.tab = b.dataset.tab;
     render();
   } else if (act === 'role') {
-    if (state.active) return;
+    if (state.connected || state.connecting) return;
     state.role = b.dataset.role;
     state.saveMessage = '';
     render();

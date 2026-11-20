@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import unittest
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -89,6 +90,14 @@ class WebUIPageTests(unittest.TestCase):
 
         self.assertIn('data-field="debug"', html)
         self.assertIn("Debug logging", html)
+
+
+class WebUIConnectionToggleTests(unittest.TestCase):
+    def test_toggle_is_bound_to_connection_status(self):
+        html = (Path(__file__).parents[1] / "crossmouse" / "ui" / "index.html").read_text()
+
+        self.assertRegex(html, r"state\.connected\s*=\s*!!s\.connected")
+        self.assertNotIn("state.active = !s.paused", html)
 
 
 if __name__ == "__main__":

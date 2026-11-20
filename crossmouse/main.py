@@ -97,6 +97,7 @@ class App:
         self._paused = False
         self._worker: threading.Thread | None = None
         self.connected = False
+        self._last_error: str | None = None
         self.role = "listener"
         self.enable_ui = enable_ui
         self.ui = None
@@ -171,6 +172,8 @@ class App:
         return {
             "connected": self.connected,
             "paused": self._paused,
+            "connecting": not self._paused and not self.connected and bool(self.config.peer_ip),
+            "last_error": self._last_error,
             "mode": self.engine.mode,
             "role": self.role,
             "peer_ip": self.config.peer_ip,
@@ -200,11 +203,13 @@ class App:
         self.engine.config = new
         self._log("Configuration saved")
         self._paused = False
+        self._last_error = None
         self._reconnect.set()
         return restart
 
     def reconnect(self) -> None:
         self._paused = False
+        self._last_error = None
         self._reconnect.set()
         self._debug("Reconnecting")
         self._log("Reconnecting")
@@ -217,7 +222,10 @@ class App:
 
     def disconnect(self) -> None:
         self._paused = True
+        self._last_error = None
         self._drop_link()
+        with self._lock:
+            self.connected = False
         self._debug("Disconnected")
         self._log("Disconnected")
 
@@ -270,6 +278,7 @@ class App:
         self.engine.attach(link)
         with self._lock:
             self.connected = True
+            self._last_error = None
         self._debug(f"Peer connected ({link.peer_screen[0]}x{link.peer_screen[1]})")
         self._log(f"Peer connected ({link.peer_screen[0]}x{link.peer_screen[1]})")
         pump_link(self.engine, link, lambda: self._stop.is_set())
@@ -295,7 +304,17 @@ class App:
                         self.config.secret,
                         self.platform.screen_size(),
                     )
+                except ConnectionRefusedError as exc:
+                    retry_requested = self._reconnect.is_set()
+                    if not retry_requested:
+                        self._paused = True
+                        self._last_error = f"Connection refused: {exc}"
+                    self._debug(f"Connection refused: {exc}")
+                    self._log(f"Connection refused: {exc}")
+                    self._wait(2)
+                    continue
                 except (OSError, AuthError) as exc:
+                    self._last_error = f"Connect failed: {exc}"
                     self._debug(f"Connect failed: {exc}")
                     self._log(f"Connect failed: {exc}")
                     self._wait(2)

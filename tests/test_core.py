@@ -84,6 +84,7 @@ class AppStatusTests(unittest.TestCase):
         app = App.__new__(App)
         app.connected = False
         app._paused = False
+        app._last_error = None
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
@@ -100,6 +101,7 @@ class AppStatusTests(unittest.TestCase):
         app = App.__new__(App)
         app.connected = False
         app._paused = False
+        app._last_error = None
         app.role = "listener"
         app.config = Config.from_dict({"secret": "s", "debug": True})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
@@ -109,6 +111,59 @@ class AppStatusTests(unittest.TestCase):
             status = app.status()
 
         self.assertTrue(status["debug"])
+
+    def test_status_distinguishes_connected_from_connecting(self):
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.connected = False
+        app._paused = False
+        app.role = "controller"
+        app.config = Config.from_dict({"secret": "s", "peer_ip": "192.168.1.5"})
+        app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
+        app._ui_port = 7788
+        app._last_error = None
+
+        with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
+            status = app.status()
+
+        self.assertFalse(status["connected"])
+        self.assertFalse(status["paused"])
+        self.assertTrue(status["connecting"])
+
+    def test_status_exposes_last_connect_error(self):
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.connected = False
+        app._paused = True
+        app.role = "controller"
+        app.config = Config.from_dict({"secret": "s", "peer_ip": "192.168.1.5"})
+        app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
+        app._ui_port = 7788
+        app._last_error = "Connection refused"
+
+        with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
+            status = app.status()
+
+        self.assertEqual(status["last_error"], "Connection refused")
+
+    def test_status_reports_listener_as_not_connecting(self):
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.connected = False
+        app._paused = False
+        app._last_error = None
+        app.role = "listener"
+        app.config = Config.from_dict({"secret": "s"})
+        app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
+        app._ui_port = 7788
+
+        with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
+            status = app.status()
+
+        self.assertFalse(status["connecting"])
 
 
 class AppDebugTests(unittest.TestCase):
@@ -293,6 +348,113 @@ class AppDebugTests(unittest.TestCase):
             self.assertTrue(
                 any("Connect failed: no route" in str(c) for c in logger.log.call_args_list)
             )
+
+    def test_active_refusal_stops_reconnecting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.config = Config.from_dict({"secret": "s", "peer_ip": "1.2.3.4"})
+            app.engine.config = app.config
+            app.engine.link = None
+            app.engine.detach = mock.Mock()
+            app.engine.mode = "idle"
+            app.engine.local_screen = (800, 600)
+            app.engine.peer_screen = (0, 0)
+            app.platform = mock.Mock()
+            app.platform.screen_size.return_value = (800, 600)
+            app._drop_link = mock.Mock()
+            app._stop = threading.Event()
+            app._reconnect = threading.Event()
+            app._paused = False
+            app.connected = False
+            app.role = "controller"
+            app._last_error = None
+            app._ui_port = 7788
+            app._wait = mock.Mock()
+            logger = mock.Mock()
+            app._debug_logger = logger
+
+            sleeps = []
+
+            def stop_after_idle(_seconds):
+                sleeps.append(_seconds)
+                if len(sleeps) >= 2:
+                    app._stop.set()
+
+            connect = mock.Mock(side_effect=ConnectionRefusedError("actively refused"))
+            with mock.patch("crossmouse.main.time.sleep", side_effect=stop_after_idle):
+                with mock.patch("crossmouse.main.Link.connect", connect):
+                    app._network_loop()
+
+            self.assertEqual(connect.call_count, 1)
+            self.assertGreaterEqual(len(sleeps), 2)
+            with mock.patch("crossmouse.main.local_ip_address", return_value="127.0.0.1"):
+                status = app.status()
+            self.assertTrue(status["paused"])
+            self.assertFalse(status["connected"])
+            self.assertFalse(status["connecting"])
+            self.assertIn("actively refused", status["last_error"])
+            self.assertTrue(
+                any("Connection refused" in str(c) for c in logger.log.call_args_list)
+            )
+
+    def test_disconnect_clears_connected_immediately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app._lock = threading.Lock()
+            app._drop_link = mock.Mock()
+            app.connected = True
+            app._paused = False
+            app._last_error = "Connection refused"
+
+            app.disconnect()
+
+            self.assertFalse(app.connected)
+            self.assertTrue(app._paused)
+            self.assertIsNone(app._last_error)
+
+    def test_connect_pressed_during_refused_attempt_is_not_lost(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.config = Config.from_dict({"secret": "s", "peer_ip": "1.2.3.4"})
+            app.engine.config = app.config
+            app.engine.link = None
+            app.engine.detach = mock.Mock()
+            app.engine.mode = "idle"
+            app.engine.local_screen = (800, 600)
+            app.engine.peer_screen = (0, 0)
+            app.platform = mock.Mock()
+            app.platform.screen_size.return_value = (800, 600)
+            app._drop_link = mock.Mock()
+            app._stop = threading.Event()
+            app._reconnect = threading.Event()
+            app._paused = False
+            app.connected = False
+            app.role = "controller"
+            app._last_error = None
+            app._wait = mock.Mock()
+
+            attempts = []
+
+            def connect_and_refuse(*_args):
+                attempts.append(1)
+                if len(attempts) == 1:
+                    app.reconnect()
+                else:
+                    app._stop.set()
+                raise ConnectionRefusedError("actively refused")
+
+            sleeps = []
+
+            def stop_after_sleep(_seconds):
+                sleeps.append(1)
+                if len(sleeps) >= 3:
+                    app._stop.set()
+
+            with mock.patch("crossmouse.main.time.sleep", side_effect=stop_after_sleep):
+                with mock.patch("crossmouse.main.Link.connect", side_effect=connect_and_refuse):
+                    app._network_loop()
+
+            self.assertEqual(len(attempts), 2)
 
 
 class CryptoTests(unittest.TestCase):
