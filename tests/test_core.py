@@ -86,6 +86,40 @@ class LocalIpTests(unittest.TestCase):
 
 
 class AppStatusTests(unittest.TestCase):
+    @staticmethod
+    def _manual_app(directory: str, extra: dict | None = None):
+        from crossmouse.main import App
+
+        config_path = Path(directory) / "config.json"
+        config_path.write_text(json.dumps({"secret": "s", **(extra or {})}))
+        platform = mock.Mock()
+        platform.screen_size.return_value = (800, 600)
+        engine = SimpleNamespace(
+            config=None,
+            mode="idle",
+            local_screen=(800, 600),
+            peer_screen=(0, 0),
+            local_event=mock.Mock(),
+            debug_snapshot=mock.Mock(),
+            link=None,
+            attach=mock.Mock(),
+            detach=mock.Mock(),
+        )
+        with (
+            mock.patch("crossmouse.main.make_platform", return_value=platform),
+            mock.patch("crossmouse.main.make_clipboard", return_value=mock.Mock()),
+            mock.patch("crossmouse.main.Engine", return_value=engine),
+            mock.patch("crossmouse.main.local_ip_address", return_value="127.0.0.1"),
+        ):
+            return App(config_path)
+
+    def test_role_is_controller_at_manual_start_when_peer_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._manual_app(directory, {"peer_ip": "1.2.3.4"})
+
+        self.assertTrue(app._paused)
+        self.assertEqual(app.status()["role"], "connector")
+
     def test_status_exposes_local_ip_for_listener_address(self):
         from crossmouse.main import App
 
@@ -122,7 +156,7 @@ class AppStatusTests(unittest.TestCase):
         app = App.__new__(App)
         app.connected = False
         app._paused = False
-        app.role = "controller"
+        app.role = "connector"
         app.config = Config.from_dict({"secret": "s", "peer_ip": "192.168.1.5"})
         app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
 
@@ -132,6 +166,21 @@ class AppStatusTests(unittest.TestCase):
         self.assertFalse(status["connected"])
         self.assertFalse(status["paused"])
         self.assertTrue(status["connecting"])
+
+    def test_status_connecting_uses_selected_role_not_peer_config(self):
+        from crossmouse.main import App
+
+        app = App.__new__(App)
+        app.connected = False
+        app._paused = False
+        app.role = "listener"
+        app.config = Config.from_dict({"secret": "s", "peer_ip": "192.168.1.5"})
+        app.engine = SimpleNamespace(mode="idle", local_screen=(1920, 1080), peer_screen=(0, 0))
+
+        with mock.patch("crossmouse.main.local_ip_address", return_value="192.168.1.10"):
+            status = app.status()
+
+        self.assertFalse(status["connecting"])
 
     def test_status_reports_listener_as_not_connecting(self):
         from crossmouse.main import App
@@ -164,6 +213,7 @@ class AppDebugTests(unittest.TestCase):
         app._lock = threading.Lock()
         app.connected = False
         app._paused = True
+        app.role = "listener"
         return app
 
     def _startup_status(self, directory: str, extra: dict) -> dict:
@@ -361,6 +411,7 @@ class AppDebugTests(unittest.TestCase):
             app.engine.config = app.config
             app.engine.link = None
             app.engine.detach = mock.Mock()
+            app.role = "connector"
             app.platform = mock.Mock()
             app.platform.screen_size.return_value = (800, 600)
             app._drop_link = mock.Mock()
@@ -394,7 +445,7 @@ class AppDebugTests(unittest.TestCase):
             app._reconnect = threading.Event()
             app._paused = False
             app.connected = False
-            app.role = "controller"
+            app.role = "connector"
             app._wait = mock.Mock()
             logger = mock.Mock()
             app._debug_logger = logger
@@ -452,7 +503,7 @@ class AppDebugTests(unittest.TestCase):
             app._reconnect = threading.Event()
             app._paused = False
             app.connected = False
-            app.role = "controller"
+            app.role = "connector"
             app._wait = mock.Mock()
 
             attempts = []
@@ -493,6 +544,47 @@ class AppDebugTests(unittest.TestCase):
 
             self.assertFalse(app.connected)
             self.assertTrue(app._paused)
+
+    def test_set_role_changes_role_without_changing_peer_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+
+            app.set_role("controller")
+
+            self.assertEqual(app.role, "connector")
+            self.assertIsNone(app.config.peer_ip)
+
+    def test_save_config_preserves_manually_selected_role(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.config = Config.from_dict({"secret": "s", "peer_ip": "1.2.3.4"})
+            app.engine.config = app.config
+            app.role = "listener"
+            app._reconnect = mock.Mock()
+
+            app.save_config({"port": 6000})
+
+            self.assertEqual(app.role, "listener")
+
+    def test_save_config_selects_controller_role_while_manual(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+
+            app.save_config({"peer_ip": "1.2.3.4"})
+
+            self.assertEqual(app.role, "connector")
+            self.assertTrue(app._paused)
+
+    def test_save_config_selects_listener_role_when_peer_cleared(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = self._app(directory)
+            app.config = Config.from_dict({"secret": "s", "peer_ip": "1.2.3.4"})
+            app.engine.config = app.config
+            app.role = "connector"
+
+            app.save_config({"peer_ip": None})
+
+            self.assertEqual(app.role, "listener")
 
     def test_save_config_stays_manual_when_auto_start_disabled(self):
         with tempfile.TemporaryDirectory() as directory:

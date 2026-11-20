@@ -90,7 +90,7 @@ class App:
         self._paused = not self.config.auto_start
         self._worker: threading.Thread | None = None
         self.connected = False
-        self.role = "listener"
+        self.role = "connector" if self.config.peer_ip else "listener"
         self.platform.start_capture(self.engine.local_event)
         self._log("CrossMouse started")
         if self.config.debug:
@@ -153,6 +153,17 @@ class App:
             self.engine.debug_sink = None
         self._log(f"Debug logging {'enabled' if enabled else 'disabled'}")
 
+    def set_role(self, role: str) -> None:
+        normalized = "connector" if role in ("controller", "connector") else role
+        if normalized not in ("listener", "connector"):
+            raise ValueError(f"unknown role: {role}")
+        if self.connected or getattr(self.engine, "link", None) or self.role == normalized:
+            return
+        self.role = normalized
+        self._debug(f"Role set to {self.role}")
+        self._log(f"Role set to {self.role}")
+        self._reconnect.set()
+
     def log_lines(self) -> list[str]:
         with self._lock:
             return list(self._lines)
@@ -161,7 +172,7 @@ class App:
         return {
             "connected": self.connected,
             "paused": self._paused,
-            "connecting": not self._paused and not self.connected and bool(self.config.peer_ip),
+            "connecting": not self._paused and not self.connected and self.role == "connector",
             "mode": self.engine.mode,
             "role": self.role,
             "peer_ip": self.config.peer_ip,
@@ -178,6 +189,7 @@ class App:
     def save_config(self, data: dict) -> bool:
         restart = False
         current = self.config.to_dict()
+        peer_changed = "peer_ip" in data and data["peer_ip"] != current["peer_ip"]
         for key in ("secret", "peer_ip", "port", "edge", "clipboard", "primary"):
             if key in data and data[key] != current[key]:
                 restart = True
@@ -188,6 +200,8 @@ class App:
         self.config_path.write_text(json.dumps(new.to_dict(), indent=2) + "\n")
         self.config = new
         self.engine.config = new
+        if peer_changed:
+            self.role = "connector" if new.peer_ip else "listener"
         self._log("Configuration saved")
         self._paused = not new.auto_start
         if self._paused and (self.connected or getattr(self.engine, "link", None)):
@@ -282,8 +296,12 @@ class App:
                 continue
             self._reconnect.clear()
             self._drop_link()
-            if self.config.peer_ip:
-                self.role = "connector"
+            if self.role == "connector":
+                if not self.config.peer_ip:
+                    self._debug("Controller role needs a peer IP")
+                    self._log("Controller role needs a peer IP")
+                    self._paused = True
+                    continue
                 try:
                     link = Link.connect(
                         self.config.peer_ip,
@@ -305,7 +323,6 @@ class App:
                     continue
                 self._on_link(link)
             else:
-                self.role = "listener"
                 self._debug(f"Listening on port {self.config.port}")
                 self._log(f"Listening on port {self.config.port}")
                 serve_once(

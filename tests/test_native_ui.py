@@ -40,6 +40,9 @@ class FakeApp:
     def set_debug(self, enabled):
         self.calls.append(("set_debug", enabled))
 
+    def set_role(self, role):
+        self.calls.append(("set_role", role))
+
     def reconnect(self):
         self.calls.append(("reconnect",))
 
@@ -163,6 +166,46 @@ class NativeUITests(unittest.TestCase):
         window.refresh()
         window.findChild(QtWidgets.QPushButton, "connect_switch").click()
         self.assertEqual(app.calls, [("disconnect",)])
+
+    def test_controller_pill_selects_controller_without_opening_settings(self):
+        from crossmouse.native_ui import NativeWindow
+
+        app = FakeApp()
+        window = NativeWindow(app)
+
+        window.findChild(QtWidgets.QPushButton, "role_controller").click()
+
+        self.assertEqual(app.calls, [("set_role", "controller")])
+        self.assertEqual(window.pages.currentWidget().objectName(), "status_page")
+
+    def test_listener_pill_selects_listener_without_clearing_config(self):
+        from crossmouse.native_ui import NativeWindow
+
+        app = FakeApp()
+        window = NativeWindow(app)
+
+        window.findChild(QtWidgets.QPushButton, "role_listener").click()
+
+        self.assertEqual(app.calls, [("set_role", "listener")])
+
+    def test_controller_without_peer_ip_opens_settings_on_connect(self):
+        from crossmouse.native_ui import NativeWindow
+
+        status = {
+            "connected": False,
+            "connecting": False,
+            "paused": True,
+            "role": "controller",
+            "peer_ip": None,
+        }
+        app = FakeApp(status=status)
+        window = NativeWindow(app)
+        window.refresh()
+
+        window.findChild(QtWidgets.QPushButton, "connect_switch").click()
+
+        self.assertEqual(window.pages.currentWidget().objectName(), "settings_sheet")
+        self.assertEqual(app.calls, [])
 
     def test_connector_role_maps_to_controller_pill(self):
         from crossmouse.native_ui import NativeWindow

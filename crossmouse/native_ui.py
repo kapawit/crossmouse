@@ -272,18 +272,21 @@ class NativeWindow(QtWidgets.QMainWindow):
         status = self.app.status()
         if status.get("connected") or status.get("connecting"):
             self.app.disconnect()
-        else:
-            self.app.reconnect()
-
-    def _choose_listener(self) -> None:
-        self.app.save_config({"peer_ip": None})
-
-    def _choose_controller(self) -> None:
-        if not self.app.config.to_dict().get("peer_ip"):
+            return
+        role = status.get("role", "listener")
+        if role == "connector":
+            role = "controller"
+        if role == "controller" and not status.get("peer_ip"):
             self.open_settings()
             self.peer_ip_field.setFocus()
-        else:
-            self.refresh()
+            return
+        self.app.reconnect()
+
+    def _choose_listener(self) -> None:
+        self.app.set_role("listener")
+
+    def _choose_controller(self) -> None:
+        self.app.set_role("controller")
 
     def open_settings(self) -> None:
         config = self.app.config.to_dict()
