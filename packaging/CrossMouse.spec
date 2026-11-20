@@ -4,7 +4,7 @@ from pathlib import Path
 root = Path(SPEC).parent.parent
 
 a = Analysis(
-    [str(root / "crossmouse" / "main.py")],
+    [str(root / "packaging" / "launcher.py")],
     pathex=[str(root)],
     binaries=[],
     datas=[(str(root / "crossmouse" / "ui" / "index.html"), "crossmouse/ui")],
