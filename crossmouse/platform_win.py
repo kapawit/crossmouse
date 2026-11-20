@@ -138,6 +138,8 @@ user32.DispatchMessageW.argtypes = [ctypes.POINTER(MSG)]
 user32.DispatchMessageW.restype = LRESULT
 user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 user32.SendInput.restype = wintypes.UINT
+user32.ShowCursor.argtypes = [wintypes.BOOL]
+user32.ShowCursor.restype = ctypes.c_int
 
 
 class WindowsPlatform(Platform):
@@ -153,8 +155,13 @@ class WindowsPlatform(Platform):
         self._suppress = value
 
     def set_pointer_visible(self, visible: bool) -> None:
-        if self._pointer_hidden == visible:
-            self._u.ShowCursor(bool(visible))
+        if self._pointer_hidden != (not visible):
+            if visible:
+                while user32.ShowCursor(True) < 0:
+                    pass
+            else:
+                while user32.ShowCursor(False) >= 0:
+                    pass
             self._pointer_hidden = not visible
 
     def screen_size(self) -> tuple[int, int]:

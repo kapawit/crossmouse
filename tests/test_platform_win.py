@@ -38,6 +38,47 @@ def import_platform_win(dlls: dict[str, FakeDLL]):
         return importlib.import_module("crossmouse.platform_win")
 
 
+class FakeShowCursor:
+    def __init__(self, results) -> None:
+        self.results = list(results)
+        self.calls: list[bool] = []
+        self.argtypes = None
+        self.restype = None
+
+    def __call__(self, show):
+        self.calls.append(bool(show))
+        return self.results.pop(0) if self.results else -1
+
+
+class WindowsPointerVisibilityTests(unittest.TestCase):
+    def test_hide_cursor_repeats_until_cursor_counter_is_negative(self):
+        dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
+        show = FakeShowCursor([0, -1])
+        dlls["user32"]._funcs["ShowCursor"] = show
+        module = import_platform_win(dlls)
+
+        platform = module.WindowsPlatform()
+        platform.set_pointer_visible(False)
+
+        self.assertEqual(show.calls, [False, False])
+        self.assertTrue(platform._pointer_hidden)
+        self.assertEqual(show.argtypes, [wintypes.BOOL])
+        self.assertIs(show.restype, ctypes.c_int)
+
+    def test_show_cursor_repeats_until_cursor_counter_is_non_negative(self):
+        dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
+        show = FakeShowCursor([-1, 0])
+        dlls["user32"]._funcs["ShowCursor"] = show
+        module = import_platform_win(dlls)
+
+        platform = module.WindowsPlatform()
+        platform._pointer_hidden = True
+        platform.set_pointer_visible(True)
+
+        self.assertEqual(show.calls, [True, True])
+        self.assertFalse(platform._pointer_hidden)
+
+
 class WindowsModuleImportTests(unittest.TestCase):
     def test_platform_win_imports_without_wintypes_lresult(self):
         module = import_platform_win({"user32": FakeDLL(), "kernel32": FakeDLL()})
