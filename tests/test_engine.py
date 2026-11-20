@@ -104,6 +104,13 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(platform.grabbed)
         self.assertIn((protocol.HANDOFF, {"from": "controlling"}), link.sent)
 
+    def test_handoff_sends_initial_position_to_peer_not_locally(self):
+        engine, platform, _, link = make_engine()
+        engine.local_event(InputEvent("move", 999, 400))
+        self.assertEqual(platform.moves, [])
+        moves = [d for k, d in link.sent if k == protocol.MOVE]
+        self.assertEqual(moves, [{"x": 0, "y": 400}])
+
     def test_controlling_forwards_move_mapped_to_peer(self):
         engine, platform, _, link = make_engine()
         engine.local_event(InputEvent("move", 999, 400))
@@ -113,6 +120,14 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(moves)
         self.assertEqual(moves[-1]["x"], 10)
         self.assertEqual(moves[-1]["y"], 410)
+
+    def test_first_leftward_delta_does_not_hand_back(self):
+        engine, _, _, link = make_engine()
+        engine.local_event(InputEvent("move", 999, 400))
+        link.sent.clear()
+        engine.local_event(InputEvent("move", 490, 400))
+        self.assertEqual(engine.mode, "controlling")
+        self.assertNotIn((protocol.HANDOFF, {"from": "controlled"}), link.sent)
 
     def test_handoff_controlling_sets_controlled(self):
         engine, _, _, _ = make_engine()
@@ -149,6 +164,37 @@ class EngineTests(unittest.TestCase):
         engine.detach()
         self.assertFalse(platform.grabbed)
         self.assertEqual(engine.mode, "idle")
+
+
+class PumpLinkTests(unittest.TestCase):
+    def test_clipboard_polled_without_messages(self):
+        from crossmouse.main import pump_link
+
+        class Link:
+            def recv(self, timeout=None):
+                return None
+
+        class Engine:
+            link = object()
+
+            def __init__(self):
+                self.polls = 0
+
+            def remote_message(self, *args):
+                pass
+
+            def poll_clipboard(self):
+                self.polls += 1
+
+        engine = Engine()
+        calls = []
+
+        def should_stop():
+            calls.append(1)
+            return len(calls) > 3
+
+        pump_link(engine, Link(), should_stop)
+        self.assertEqual(engine.polls, 3)
 
 
 if __name__ == "__main__":

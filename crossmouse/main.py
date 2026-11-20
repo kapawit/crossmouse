@@ -29,6 +29,17 @@ def make_platform() -> Platform:
     return LinuxPlatform()
 
 
+def pump_link(engine, link, should_stop) -> None:
+    while not should_stop():
+        message = link.recv(timeout=0.2)
+        if message is None:
+            if engine.link is None:
+                break
+        else:
+            engine.remote_message(*message)
+        engine.poll_clipboard()
+
+
 class App:
     def __init__(
         self,
@@ -145,14 +156,7 @@ class App:
         with self._lock:
             self.connected = True
         self._log(f"Peer connected ({link.peer_screen[0]}x{link.peer_screen[1]})")
-        while not self._stop.is_set():
-            message = link.recv(timeout=0.2)
-            if message is None:
-                if self.engine.link is None:
-                    break
-                continue
-            self.engine.remote_message(*message)
-            self.engine.poll_clipboard()
+        pump_link(self.engine, link, lambda: self._stop.is_set())
         self.engine.detach()
         with self._lock:
             self.connected = False

@@ -11,6 +11,13 @@ from .platform_base import EventSink, InputEvent, Platform
 
 _BUTTONS = {1: "left", 2: "middle", 3: "right"}
 _BUTTON_CODES = {v: k for k, v in _BUTTONS.items()}
+_WHEEL_UP, _WHEEL_DOWN = 4, 5
+
+
+def button_event(detail: int, pressed: int) -> InputEvent | None:
+    if detail in (_WHEEL_UP, _WHEEL_DOWN):
+        return InputEvent("scroll", 0, 1 if detail == _WHEEL_UP else -1) if pressed else None
+    return InputEvent("button", _BUTTONS.get(detail, "left"), pressed)
 
 _KEY_ALIASES = {
     "ctrl": "Control_L",
@@ -137,9 +144,13 @@ class LinuxPlatform(Platform):
             if t == X.MotionNotify:
                 self._sink(InputEvent("move", int(event.root_x), int(event.root_y)))
             elif t == X.ButtonPress:
-                self._sink(InputEvent("button", _BUTTONS.get(event.detail, "left"), 1))
+                translated = button_event(event.detail, 1)
+                if translated:
+                    self._sink(translated)
             elif t == X.ButtonRelease:
-                self._sink(InputEvent("button", _BUTTONS.get(event.detail, "left"), 0))
+                translated = button_event(event.detail, 0)
+                if translated:
+                    self._sink(translated)
             elif t in (X.KeyPress, X.KeyRelease):
                 keysym = self._display.keycode_to_keysym(event.detail, 0)
                 name = XK.keysym_to_string(keysym)

@@ -118,7 +118,7 @@ class Engine:
         self._last_pointer = center
         self.mode = "controlling"
         self._send(protocol.HANDOFF, {"from": "controlling"})
-        self.platform.inject(InputEvent("move", self._vx, self._vy))
+        self._send(protocol.MOVE, {"x": self._vx, "y": self._vy})
         log.info("controlling peer")
 
     def _forward(self, event: InputEvent) -> None:
@@ -131,6 +131,7 @@ class Engine:
             self.platform.set_pointer(*center)
             self._last_pointer = center
             pw, ph = self.peer_screen
+            prev_x, prev_y = self._vx, self._vy
             self._vx = max(0, min(pw - 1, self._vx + dx))
             self._vy = max(0, min(ph - 1, self._vy + dy))
             if beyond_edge(
@@ -139,8 +140,8 @@ class Engine:
                 self._vy,
                 pw,
                 ph,
-                last[0],
-                last[1],
+                prev_x,
+                prev_y,
             ):
                 self._end_controlling()
                 return

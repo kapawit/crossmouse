@@ -24,7 +24,7 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: python3 (>= 3.10)
+Depends: python3 (>= 3.10), python3-cryptography
 Maintainer: CrossMouse <crossmouse@local>
 Description: Share one mouse and keyboard between two machines over LAN
  CrossMouse lets one mouse and keyboard drive a Linux and a Windows

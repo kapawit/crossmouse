@@ -56,6 +56,22 @@ class CryptoTests(unittest.TestCase):
         self.assertFalse(crypto.verify_probe(crypto.derive_key("x", b"2" * 16), crypto.make_probe(key)))
 
 
+class LinuxButtonTests(unittest.TestCase):
+    def test_wheel_maps_to_scroll(self):
+        from crossmouse.platform_linux import button_event
+
+        self.assertEqual(button_event(4, 1).kind, "scroll")
+        self.assertEqual(button_event(4, 1).b, 1)
+        self.assertEqual(button_event(5, 1).b, -1)
+        self.assertIsNone(button_event(4, 0))
+
+    def test_normal_buttons_unchanged(self):
+        from crossmouse.platform_linux import button_event
+
+        self.assertEqual(button_event(1, 1).kind, "button")
+        self.assertEqual(button_event(3, 1).a, "right")
+
+
 class ProtocolTests(unittest.TestCase):
     def test_frame_unframe_partial(self):
         raw = protocol.encode(protocol.MOVE, {"x": 1})
