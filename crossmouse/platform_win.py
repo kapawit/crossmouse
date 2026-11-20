@@ -41,6 +41,10 @@ HID_USAGE_GENERIC_MOUSE = 2
 MOUSE_MOVE_ABSOLUTE = 0x01
 MOUSE_ATTRIBUTES_CHANGED = 0x04
 HWND_MESSAGE = wintypes.HWND(-3)
+SYSTEM_CURSOR_IDS = (
+    32512, 32513, 32514, 32515, 32516,
+    32642, 32643, 32644, 32645, 32646, 32648, 32649, 32650,
+)
 
 _VK = {
     "ctrl": 0x11, "shift": 0x10, "alt": 0x12, "super": 0x5B,
@@ -207,6 +211,17 @@ user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 user32.SendInput.restype = wintypes.UINT
 user32.ShowCursor.argtypes = [wintypes.BOOL]
 user32.ShowCursor.restype = ctypes.c_int
+user32.LoadCursorW.argtypes = [wintypes.HINSTANCE, wintypes.UINT]
+user32.LoadCursorW.restype = wintypes.HICON
+user32.CopyIcon.argtypes = [wintypes.HICON]
+user32.CopyIcon.restype = wintypes.HICON
+user32.CreateCursor.argtypes = [
+    wintypes.HINSTANCE, ctypes.c_int, ctypes.c_int,
+    ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p,
+]
+user32.CreateCursor.restype = wintypes.HICON
+user32.SetSystemCursor.argtypes = [wintypes.HICON, wintypes.UINT]
+user32.SetSystemCursor.restype = wintypes.BOOL
 user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASSW)]
 user32.RegisterClassW.restype = wintypes.ATOM
 user32.CreateWindowExW.argtypes = [
@@ -238,6 +253,7 @@ class WindowsPlatform(Platform):
         self._pressed: set[int] = set()
         self._suppress = False
         self._pointer_hidden = False
+        self._saved_cursors: list[tuple[int, object]] = []
         self._window = None
         self._class_name = None
         self._raw_device: RAWINPUTDEVICE | None = None
@@ -248,12 +264,30 @@ class WindowsPlatform(Platform):
     def set_suppress(self, value: bool) -> None:
         self._suppress = value
 
+    def _hide_system_cursors(self) -> None:
+        if self._saved_cursors:
+            return
+        and_mask = b"\xff\x00\x00\x00"
+        xor_mask = b"\x00\x00\x00\x00"
+        for cursor_id in SYSTEM_CURSOR_IDS:
+            original = user32.CopyIcon(user32.LoadCursorW(None, cursor_id))
+            self._saved_cursors.append((cursor_id, original))
+            blank = user32.CreateCursor(None, 0, 0, 1, 1, and_mask, xor_mask)
+            user32.SetSystemCursor(blank, cursor_id)
+
+    def _restore_system_cursors(self) -> None:
+        for cursor_id, original in self._saved_cursors:
+            user32.SetSystemCursor(original, cursor_id)
+        self._saved_cursors.clear()
+
     def set_pointer_visible(self, visible: bool) -> None:
         if self._pointer_hidden != (not visible):
             if visible:
                 while user32.ShowCursor(True) < 0:
                     pass
+                self._restore_system_cursors()
             else:
+                self._hide_system_cursors()
                 while user32.ShowCursor(False) >= 0:
                     pass
             self._pointer_hidden = not visible
@@ -406,6 +440,7 @@ class WindowsPlatform(Platform):
             self._sink(InputEvent("move_rel", dx, dy))
 
     def stop_capture(self) -> None:
+        self.set_pointer_visible(True)
         if self._raw_device is not None:
             removal = RAWINPUTDEVICE(
                 self._raw_device.usUsagePage,

@@ -288,6 +288,56 @@ class WindowsPointerVisibilityTests(unittest.TestCase):
         self.assertEqual(show.argtypes, [wintypes.BOOL])
         self.assertIs(show.restype, ctypes.c_int)
 
+    def test_hide_cursor_replaces_system_cursors_and_restores_them(self):
+        cursor_ids = [
+            32512, 32513, 32514, 32515, 32516,
+            32642, 32643, 32644, 32645, 32646, 32648, 32649, 32650,
+        ]
+        dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
+        dlls["user32"]._funcs["ShowCursor"] = FakeShowCursor([0, -1, 0])
+        calls = []
+
+        def load_cursor(instance, cursor_id):
+            calls.append(("load", cursor_id))
+            return 1000 + cursor_id
+
+        def copy_icon(handle):
+            calls.append(("copy", handle))
+            return 5000 + handle
+
+        def create_cursor(*args):
+            calls.append(("blank", args))
+            return 9000
+
+        def set_system_cursor(handle, cursor_id):
+            calls.append(("set", cursor_id, handle))
+
+        dlls["user32"]._funcs["LoadCursorW"] = load_cursor
+        dlls["user32"]._funcs["CopyIcon"] = copy_icon
+        dlls["user32"]._funcs["CreateCursor"] = create_cursor
+        dlls["user32"]._funcs["SetSystemCursor"] = set_system_cursor
+
+        module = import_platform_win(dlls)
+        platform = module.WindowsPlatform()
+
+        platform.set_pointer_visible(False)
+
+        self.assertEqual(
+            [call[1] for call in calls if call[0] == "load"],
+            cursor_ids,
+        )
+        hidden = [call for call in calls if call[0] == "set"]
+        self.assertEqual([call[1] for call in hidden], cursor_ids)
+        self.assertTrue(all(call[2] == 9000 for call in hidden))
+
+        platform.set_pointer_visible(True)
+
+        restored = [call for call in calls if call[0] == "set"][len(cursor_ids):]
+        self.assertEqual(
+            [call[2] for call in restored],
+            [5000 + 1000 + cursor_id for cursor_id in cursor_ids],
+        )
+
     def test_show_cursor_repeats_until_cursor_counter_is_non_negative(self):
         dlls = {"user32": FakeDLL(), "kernel32": FakeDLL()}
         show = FakeShowCursor([-1, 0])

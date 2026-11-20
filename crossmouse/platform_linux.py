@@ -125,6 +125,7 @@ class LinuxPlatform(Platform):
         self._record_context = None
         self._thread: threading.Thread | None = None
         self._grabbed = False
+        self._keyboard_grabbed = False
         self._pressed_keys: set[int] = set()
         self._warp_targets: deque[tuple[int, int, float]] = deque()
         self._pointer_hidden = False
@@ -183,11 +184,22 @@ class LinuxPlatform(Platform):
             X.CurrentTime,
         )
         self._grabbed = True
+        if not self._keyboard_grabbed:
+            self._root.grab_keyboard(
+                False,
+                X.GrabModeAsync,
+                X.GrabModeAsync,
+                X.CurrentTime,
+            )
+            self._keyboard_grabbed = True
 
     def ungrab(self) -> None:
         if not self._grabbed:
             return
         self._display.ungrab_pointer(X.CurrentTime)
+        if self._keyboard_grabbed:
+            self._display.ungrab_keyboard(X.CurrentTime)
+            self._keyboard_grabbed = False
         self._flush()
         self._grabbed = False
 
