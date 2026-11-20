@@ -81,6 +81,22 @@ class LinuxButtonTests(unittest.TestCase):
         self.assertEqual(button_event(5, 1).b, -1)
         self.assertIsNone(button_event(4, 0))
 
+    def test_special_keysyms_map_to_canonical_names(self):
+        from Xlib import XK
+
+        from crossmouse.platform_linux import keysym_to_key
+
+        for name, expected in (
+            ("BackSpace", "backspace"),
+            ("Return", "enter"),
+            ("Tab", "tab"),
+            ("Escape", "escape"),
+            ("Left", "left"),
+            ("F1", "f1"),
+            ("a", "a"),
+        ):
+            self.assertEqual(keysym_to_key(XK.string_to_keysym(name)), expected)
+
     def test_own_warp_is_filtered_once(self):
         import time
         from collections import deque

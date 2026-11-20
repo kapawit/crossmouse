@@ -79,6 +79,26 @@ class LinkIntegrationTests(unittest.TestCase):
 
 
     @unittest.skipUnless(os.environ.get("DISPLAY"), "requires X11")
+    def test_backspace_is_captured(self):
+        from Xlib import X, XK
+        from Xlib.ext import xtest
+
+        from crossmouse.platform_base import InputEvent
+        from crossmouse.platform_linux import LinuxPlatform
+
+        platform = LinuxPlatform()
+        seen = []
+        platform.start_capture(seen.append)
+        time.sleep(0.2)
+        code = platform._display.keysym_to_keycode(XK.string_to_keysym("BackSpace"))
+        xtest.fake_input(platform._display, X.KeyPress, detail=code)
+        xtest.fake_input(platform._display, X.KeyRelease, detail=code)
+        platform._display.sync()
+        time.sleep(0.3)
+        platform.stop_capture()
+        self.assertIn(InputEvent("key", "backspace", 1), seen)
+
+    @unittest.skipUnless(os.environ.get("DISPLAY"), "requires X11")
     def test_injected_scroll_is_not_recaptured(self):
         from crossmouse.platform_base import InputEvent
         from crossmouse.platform_linux import LinuxPlatform

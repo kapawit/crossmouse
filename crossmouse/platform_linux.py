@@ -43,6 +43,8 @@ _KEY_ALIASES = {
     "plus": "plus",
     "minus": "minus",
 }
+for _number in range(1, 13):
+    _KEY_ALIASES[f"f{_number}"] = f"F{_number}"
 
 
 def _canonical_key(keysym_name: str) -> str:
@@ -51,6 +53,37 @@ def _canonical_key(keysym_name: str) -> str:
     if name in reverse:
         return reverse[name]
     return name
+
+
+def _build_keysym_map() -> dict[int, str]:
+    mapping: dict[int, str] = {}
+    for canonical, keysym_name in _KEY_ALIASES.items():
+        keysym = XK.string_to_keysym(keysym_name)
+        if keysym and keysym != XK.NoSymbol:
+            mapping[keysym] = canonical
+    for char in "abcdefghijklmnopqrstuvwxyz0123456789":
+        keysym = XK.string_to_keysym(char)
+        if keysym:
+            mapping[keysym] = char
+    for number in range(1, 13):
+        keysym = XK.string_to_keysym(f"F{number}")
+        if keysym:
+            mapping[keysym] = f"f{number}"
+    return mapping
+
+
+_KEYSYM_TO_KEY = _build_keysym_map()
+
+
+def keysym_to_key(keysym: int) -> str | None:
+    key = _KEYSYM_TO_KEY.get(keysym)
+    if key is not None:
+        return key
+    name = XK.keysym_to_string(keysym)
+    if not name:
+        return None
+    text = name.decode() if isinstance(name, bytes) else name
+    return _canonical_key(text)
 
 
 def _keysym_for(key: str) -> int:
@@ -167,10 +200,9 @@ class LinuxPlatform(Platform):
                 out = button_event(event.detail, 0)
             elif t in (X.KeyPress, X.KeyRelease):
                 keysym = self._display.keycode_to_keysym(event.detail, 0)
-                name = XK.keysym_to_string(keysym)
-                if not name:
+                key = keysym_to_key(keysym)
+                if key is None:
                     continue
-                key = _canonical_key(name.decode() if isinstance(name, bytes) else name)
                 out = InputEvent("key", key, 1 if t == X.KeyPress else 0)
             if out is not None and not self.is_own_injection(out):
                 self._sink(out)
