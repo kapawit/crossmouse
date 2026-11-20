@@ -4,5 +4,6 @@
   "port": 52800,
   "edge": "right",
   "clipboard": true,
-  "primary": true
+  "primary": true,
+  "debug": false
 }

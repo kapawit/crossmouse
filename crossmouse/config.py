@@ -15,6 +15,7 @@ class Config:
     edge: str = "right"
     clipboard: bool = True
     primary: bool = True
+    debug: bool = False
 
     def __post_init__(self) -> None:
         if not self.secret:
@@ -33,6 +34,7 @@ class Config:
             edge=data.get("edge", "right"),
             clipboard=bool(data.get("clipboard", True)),
             primary=bool(data.get("primary", True)),
+            debug=bool(data.get("debug", False)),
         )
 
     @classmethod

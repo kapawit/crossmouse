@@ -26,6 +26,11 @@ class ConfigTests(unittest.TestCase):
         c = Config.from_dict({"secret": "s"})
         self.assertEqual(c.port, 52800)
         self.assertEqual(c.edge, "right")
+        self.assertFalse(c.debug)
+
+    def test_debug_round_trip(self):
+        c = Config.from_dict({"secret": "s", "debug": True})
+        self.assertTrue(c.to_dict()["debug"])
 
     def test_rejects_bad_edge(self):
         with self.assertRaises(ValueError):
